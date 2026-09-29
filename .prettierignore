@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+packages/db/generated
+packages/db/prisma/migrations
+docs/SPEC.md

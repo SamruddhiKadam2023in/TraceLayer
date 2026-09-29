@@ -1,0 +1,88 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+}
+
+/* Semantic color tokens. Components use these, never raw palette values,
+   so light/dark switching happens in exactly one place. */
+@theme inline {
+  --color-canvas: var(--tl-canvas);
+  --color-surface: var(--tl-surface);
+  --color-surface-2: var(--tl-surface-2);
+  --color-line: var(--tl-line);
+  --color-fg: var(--tl-fg);
+  --color-fg-muted: var(--tl-fg-muted);
+  --color-fg-subtle: var(--tl-fg-subtle);
+  --color-accent: var(--tl-accent);
+  --color-accent-fg: var(--tl-accent-fg);
+  --color-ok: var(--tl-ok);
+  --color-ok-soft: var(--tl-ok-soft);
+  --color-warn: var(--tl-warn);
+  --color-warn-soft: var(--tl-warn-soft);
+  --color-fail: var(--tl-fail);
+  --color-fail-soft: var(--tl-fail-soft);
+}
+
+:root {
+  color-scheme: light;
+  --tl-canvas: #f6f7f9;
+  --tl-surface: #ffffff;
+  --tl-surface-2: #f0f2f5;
+  --tl-line: #e2e5ea;
+  --tl-fg: #111318;
+  --tl-fg-muted: #4b5260;
+  --tl-fg-subtle: #6b7280;
+  --tl-accent: #2f5bea;
+  --tl-accent-fg: #ffffff;
+  --tl-ok: #0f7a4a;
+  --tl-ok-soft: #e3f5ec;
+  --tl-warn: #9a5b00;
+  --tl-warn-soft: #fdf1dc;
+  --tl-fail: #c0262d;
+  --tl-fail-soft: #fde7e8;
+}
+
+.dark {
+  color-scheme: dark;
+  --tl-canvas: #0b0d11;
+  --tl-surface: #12151b;
+  --tl-surface-2: #181c24;
+  --tl-line: #242a35;
+  --tl-fg: #e8eaee;
+  --tl-fg-muted: #a3aab8;
+  --tl-fg-subtle: #7d8595;
+  --tl-accent: #5b8cff;
+  --tl-accent-fg: #0b0d11;
+  --tl-ok: #3ecf8e;
+  --tl-ok-soft: #10281e;
+  --tl-warn: #f0b429;
+  --tl-warn-soft: #2a2110;
+  --tl-fail: #ff6369;
+  --tl-fail-soft: #2d1416;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-canvas text-fg;
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}

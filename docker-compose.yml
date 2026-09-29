@@ -1,0 +1,111 @@
+# TraceLayer local stack:  docker compose up --build
+#   UI         http://localhost:8080
+#   API        http://localhost:4000/api/health
+#   Postgres   localhost:${POSTGRES_PORT:-5434}
+#   Redis      localhost:${REDIS_PORT:-6379}
+#
+# Values fall back to development defaults so the stack starts without a .env file.
+# Never reuse these defaults outside local development.
+
+name: tracelayer
+
+x-server-env: &server-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-tracelayer}:${POSTGRES_PASSWORD:-tracelayer}@postgres:5432/${POSTGRES_DB:-tracelayer}?schema=public
+  REDIS_URL: redis://redis:6379
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tracelayer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tracelayer}
+      POSTGRES_DB: ${POSTGRES_DB:-tracelayer}
+    ports:
+      - '${POSTGRES_PORT:-5434}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # BullMQ requires noeviction so queued jobs are never silently dropped.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      target: backend
+    restart: unless-stopped
+    environment:
+      <<: *server-env
+      BACKEND_PORT: 4000
+      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-8080}
+      JWT_SECRET: ${JWT_SECRET:-change-me-dev-access-secret-at-least-32-chars}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-dev-refresh-secret-at-least-32-chars}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL_DAYS: ${JWT_REFRESH_TTL_DAYS:-7}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE=}
+    ports:
+      - '${BACKEND_PORT:-4000}:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:4000/api/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    environment:
+      <<: *server-env
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
+    depends_on:
+      # The backend applies migrations on start; wait for it before processing jobs.
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      target: frontend
+    restart: unless-stopped
+    ports:
+      - '${FRONTEND_PORT:-8080}:80'
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,45 @@
+{
+  "name": "tracelayer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API Reliability & Observability Platform",
+  "packageManager": "pnpm@10.5.2",
+  "engines": {
+    "node": ">=20.17.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm -r test",
+    "db:generate": "pnpm --filter @tracelayer/db generate",
+    "db:migrate": "pnpm --filter @tracelayer/db migrate:dev",
+    "db:deploy": "pnpm --filter @tracelayer/db migrate:deploy",
+    "infra:up": "docker compose up -d postgres redis",
+    "infra:down": "docker compose stop postgres redis"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild",
+      "@tailwindcss/oxide"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9",
+    "@types/node": "^20",
+    "eslint": "^9",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.12.0",
+    "prettier": "^3",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8"
+  }
+}
