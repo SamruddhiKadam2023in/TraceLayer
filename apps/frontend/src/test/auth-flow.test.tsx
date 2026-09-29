@@ -7,7 +7,14 @@ import type { HealthReport } from '@tracelayer/shared';
 import { routes } from '@/routes/router';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/stores/auth.store';
-import { apiError, installFakeApi, makeSession, ok, UNAUTHENTICATED } from './fake-api';
+import {
+  apiError,
+  installFakeApi,
+  makeSession,
+  ok,
+  ONE_WORKSPACE,
+  UNAUTHENTICATED,
+} from './fake-api';
 
 const HEALTH: HealthReport = {
   status: 'ok',
@@ -44,6 +51,7 @@ describe('session restore and route protection', () => {
     installFakeApi({
       'POST /auth/refresh': [200, ok(makeSession())],
       'GET /health': [200, ok(HEALTH)],
+      'GET /workspaces': ONE_WORKSPACE,
     });
     renderApp('/login');
 
@@ -103,6 +111,7 @@ describe('sign in', () => {
       'POST /auth/refresh': UNAUTHENTICATED,
       'POST /auth/login': [200, ok(makeSession())],
       'GET /health': [200, ok(HEALTH)],
+      'GET /workspaces': ONE_WORKSPACE,
     });
     const router = renderApp('/status');
 
@@ -173,6 +182,7 @@ describe('create account', () => {
       'POST /auth/refresh': UNAUTHENTICATED,
       'POST /auth/register': [201, ok(makeSession())],
       'GET /health': [200, ok(HEALTH)],
+      'GET /workspaces': ONE_WORKSPACE,
     });
     renderApp('/register');
 
@@ -188,6 +198,7 @@ describe('sign out', () => {
     const fake = installFakeApi({
       'POST /auth/refresh': [200, ok(makeSession())],
       'GET /health': [200, ok(HEALTH)],
+      'GET /workspaces': ONE_WORKSPACE,
       'POST /auth/logout': [204, ''],
     });
     renderApp('/status');

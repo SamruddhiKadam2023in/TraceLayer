@@ -4,7 +4,7 @@ import {
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
-import type { AuthSession } from '@tracelayer/shared';
+import type { AuthSession, WorkspaceSummary } from '@tracelayer/shared';
 import { api } from '@/services/api';
 
 export type FakeResponse = [status: number, body: unknown];
@@ -89,3 +89,17 @@ export const UNAUTHENTICATED: FakeResponse = [
   401,
   apiError('UNAUTHENTICATED', 'Session expired, please sign in again'),
 ];
+
+export function makeWorkspace(overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
+  return {
+    id: 'ws-1',
+    name: 'Acme',
+    role: 'OWNER',
+    memberCount: 1,
+    createdAt: '2026-09-29T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** The signed-in user belongs to one workspace; add to every signed-in scenario. */
+export const ONE_WORKSPACE: FakeResponse = [200, ok([makeWorkspace()])];

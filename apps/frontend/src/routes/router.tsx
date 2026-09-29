@@ -6,7 +6,8 @@ import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { SystemStatusPage } from '@/pages/SystemStatusPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
-import { RedirectIfAuthenticated, RequireAuth } from './guards';
+import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettingsPage';
+import { RedirectIfAuthenticated, RequireAuth, RequireWorkspace } from './guards';
 
 export const routes: RouteObject[] = [
   {
@@ -28,11 +29,17 @@ export const routes: RouteObject[] = [
         element: <RequireAuth />,
         children: [
           {
-            element: <AppLayout />,
+            element: <RequireWorkspace />,
             children: [
-              // The dashboard replaces this redirect when it is built (Phase 9).
-              { path: '/', element: <Navigate to="/status" replace /> },
-              { path: '/status', element: <SystemStatusPage /> },
+              {
+                element: <AppLayout />,
+                children: [
+                  // The dashboard replaces this redirect when it is built (Phase 9).
+                  { path: '/', element: <Navigate to="/status" replace /> },
+                  { path: '/status', element: <SystemStatusPage /> },
+                  { path: '/settings', element: <WorkspaceSettingsPage /> },
+                ],
+              },
             ],
           },
         ],

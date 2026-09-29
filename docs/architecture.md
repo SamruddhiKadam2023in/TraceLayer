@@ -4,7 +4,7 @@ TraceLayer is a pnpm monorepo with three runnable apps (frontend, backend, worke
 packages (database client, shared types). PostgreSQL is the system of record; Redis carries the job
 queue, the worker heartbeat, rate-limit counters and, later, real-time fan-out.
 
-> **Status:** this document covers Phases 1–2 (foundation and authentication). Sections marked _(planned)_ describe
+> **Status:** this document covers Phases 1–3 (foundation, authentication, workspaces). Sections marked _(planned)_ describe
 > the target design from [SPEC.md](SPEC.md) and are filled in by the phase noted.
 
 ## System diagram
@@ -79,8 +79,12 @@ docker-compose.yml
 - Routes are split into **public** (`/login`, `/register`, in `AuthLayout`) and **protected**
   (everything else, in `AppLayout`, the persistent shell: top bar, collapsible sidebar, main
   content). See [Authentication](#authentication) for how the guards decide.
-- Screens so far: sign-in, sign-up, and **System Status**, which renders the live `/api/health`
-  report. Sidebar entries are added as each feature is built, so there are no placeholder pages.
+- Signed-in routes also sit behind `RequireWorkspace`, which loads the user's workspaces and
+  guarantees a current one. Users with none see the "create your first workspace" screen.
+- Screens so far: sign-in, sign-up, first-workspace onboarding, **System Status** (the live
+  `/api/health` report) and **Workspace settings** (rename, members, leave, delete). The top
+  bar holds the workspace switcher. Sidebar entries are added as each feature is built, so there
+  are no placeholder pages.
 
 ### Backend — `apps/backend`
 
@@ -161,8 +165,9 @@ Both shapes are defined once in `@tracelayer/shared` and used by the backend and
 
 - PostgreSQL 16 is the system of record. Prisma 6 provides the schema, migrations and a typed
   client, published inside the monorepo as `@tracelayer/db` and shared by the backend and worker.
-- Models are added phase by phase, each with its own migration. Current tables: `users` and
-  `refresh_tokens`. Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
+- Models are added phase by phase, each with its own migration. Current tables: `users`,
+  `refresh_tokens`, `workspaces` and `workspace_members` (role is the Postgres enum
+  `workspace_role`). Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
   timestamps are `timestamptz`.
 - The backend container runs `prisma migrate deploy` before starting, so a fresh
   `docker compose up` always has an up-to-date schema. The worker waits for the backend to
@@ -243,6 +248,50 @@ throttling.
    replays the request. Concurrent 401s share a single refresh call. Across browser tabs, the Web
    Locks API makes refreshes take turns: two tabs refreshing with the same cookie at once would
    otherwise look like token theft.
+
+## Authorization
+
+Every workspace-scoped action is checked on the server against one permission table in
+`@tracelayer/shared` (`PERMISSIONS`):
+
+| Permission          | Owner | Admin | Member | Viewer |
+| ------------------- | :---: | :---: | :----: | :----: |
+| `workspace.read`    |   ✓   |   ✓   |   ✓    |   ✓    |
+| `workspace.update`  |   ✓   |       |        |        |
+| `workspace.delete`  |   ✓   |       |        |        |
+| `members.manage`    |   ✓   |   ✓   |        |        |
+| `projects.manage`   |   ✓   |   ✓   |        |        |
+| `monitoring.manage` |   ✓   |   ✓   |   ✓    |        |
+
+(`projects.manage` and `monitoring.manage` are defined now and enforced from Phases 4–7.)
+
+Rules beyond the table:
+
+- Only owners can make someone an owner, or change or remove an owner. Admins manage everyone else.
+- Any member can leave. A workspace always keeps at least one owner: the last owner cannot be
+  demoted, removed or leave, and must promote someone or delete the workspace instead.
+- Non-members get **404** for a workspace, never 403, so ids cannot be probed for existence.
+  Malformed ids also return 404.
+
+How it is enforced:
+
+- `requireWorkspace(permission)` middleware (`middleware/workspace-access.ts`) resolves the
+  caller's membership for `:workspaceId` and rejects with 404 or 403. It is built on
+  `authorizeWorkspace()` in `services/access.service.ts`, which later phases reuse for
+  resources that belong to a workspace (projects, endpoints, monitors).
+- Member mutations (`services/member.service.ts`) run in a transaction that first locks every
+  member row of the workspace (`SELECT … FOR UPDATE`) and then checks permissions against those
+  locked rows. Concurrent changes to one workspace's members are serialized, and each sees the
+  others' results. For example, if two owners demote each other at the same moment, one
+  succeeds; the other then finds it is no longer an owner and is refused. An integration test
+  forces exactly this race and fails if the lock is removed.
+- The frontend imports the same table (`hasPermission`, `assignableRoles`, `canManageMember`)
+  purely to hide controls the user cannot use.
+
+**Workspace selection** lives in the client (`stores/workspace.store.ts`). The current
+workspace id is persisted in `localStorage`, and a remembered id the user can no longer access
+falls back to their first workspace. The store is cleared on sign-out, so a shared browser never
+shows one user's workspaces to the next.
 
 ## Configuration
 

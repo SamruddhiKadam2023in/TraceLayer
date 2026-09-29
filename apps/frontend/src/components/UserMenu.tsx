@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ChevronDown, LogOut } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { logout } from '@/services/auth.service';
+import { useDismiss } from '@/hooks/useDismiss';
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -20,24 +21,8 @@ export function UserMenu() {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(open, close, containerRef, buttonRef);
 
   if (!user) return null;
 

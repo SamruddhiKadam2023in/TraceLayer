@@ -5,6 +5,7 @@ import { Logo } from '@/components/Logo';
 import { SidebarNav } from '@/components/Sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { UserMenu } from '@/components/UserMenu';
+import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 import { useUiStore } from '@/stores/ui.store';
 
 /** Persistent application shell: top bar, collapsible sidebar, main content. */
@@ -53,9 +54,13 @@ export function AppLayout() {
             <PanelLeftClose className="size-4" aria-hidden="true" />
           )}
         </button>
-        <Link to="/" className="rounded-md px-1">
+        <Link to="/" className="hidden rounded-md px-1 sm:block">
           <Logo />
         </Link>
+        <span className="hidden text-line sm:inline" aria-hidden="true">
+          /
+        </span>
+        <WorkspaceSwitcher />
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
           <UserMenu />

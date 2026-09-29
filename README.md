@@ -4,9 +4,10 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 2 of 20 (Authentication) complete.** The monorepo, frontend, backend,
-> worker, database and Docker stack run end to end, and users can create an account, sign in and
-> stay signed in securely. Product features are added phase by
+> **Project status: Phase 3 of 20 (Workspaces) complete.** The monorepo, frontend, backend,
+> worker, database and Docker stack run end to end. Users can create an account, sign in, create
+> workspaces, switch between them, and share them with teammates under role-based permissions.
+> Product features are added phase by
 > phase following the [master specification](docs/SPEC.md). Sections below marked _(planned)_
 > describe features that do not exist yet.
 
@@ -37,7 +38,7 @@ monitoring and investigation tool, not a Postman clone.
 | ------------------------------------------------------------------ | ------------------------- |
 | System status page (live API, database, Redis and worker health)   | ✅ Phase 1                |
 | Accounts and authentication (JWT access + rotating refresh tokens) | ✅ Phase 2                |
-| Workspaces with roles (owner, admin, member, viewer)               | _(planned, Phase 3)_      |
+| Workspaces with roles (owner, admin, member, viewer)               | ✅ Phase 3                |
 | Projects, environments and API endpoints                           | _(planned, Phases 4–5)_   |
 | Manual request builder with history                                | _(planned, Phase 6)_      |
 | Scheduled monitors (availability, status, performance, validation) | _(planned, Phase 7)_      |
@@ -157,9 +158,12 @@ Current coverage:
   a real database: registration and validation, login, token verification (including expired,
   forged and `alg: none` tokens), refresh-token rotation and theft detection, logout, and rate
   limiting. The Redis rate-limit store is tested against a real Redis.
+  Workspaces: CRUD, the permission table for every role, member management, the
+  "always one owner" rule, and a forced race where two owners demote each other at once.
 - **Worker (Jest):** the heartbeat.
 - **Frontend (Vitest + Testing Library):** sign-in, sign-up, sign-out, route protection, session
-  restore on reload, silent token renewal, and the System Status page.
+  restore on reload, silent token renewal, the System Status page, first-workspace onboarding,
+  workspace switching, what each role sees in settings, and member and deletion flows.
 
 End-to-end tests with Playwright arrive in Phase 15, and a GitHub Actions pipeline running all of
 the above in Phase 16.
@@ -182,6 +186,7 @@ All endpoints live under `/api` and return one of two shapes:
 | POST   | `/api/auth/refresh`  | Refresh cookie | Rotate the refresh token, get a new access token                   |
 | POST   | `/api/auth/logout`   | Refresh cookie | End the session                                                    |
 | GET    | `/api/auth/me`       | Bearer token   | The signed-in user                                                 |
+| —      | `/api/workspaces/…`  | Bearer token   | Workspace CRUD and members (see the API reference)                 |
 
 Request and response details for every endpoint: [docs/api.md](docs/api.md).
 
@@ -197,7 +202,13 @@ In place so far:
   to `/api/auth`. Only an HMAC of each token is stored. Every refresh rotates the token, and
   reusing an old one revokes the whole session, which cuts off a stolen token.
 - **Rate limits** (stored in Redis, shared across API instances): 10 failed sign-ins per 15 min,
-  5 registrations per hour, 60 refreshes per 15 min, per client IP.
+  5 registrations per hour, 60 refreshes per 15 min, per client IP; 20 new workspaces per hour
+  and 30 member additions per 15 min, per user.
+- **Authorization** is enforced by the API on every request, from one permission table shared
+  with the frontend (which only uses it to hide controls). Non-members get **404**, not 403, so
+  workspace ids cannot be probed. Member changes run inside a transaction that locks the
+  workspace's member rows and re-checks the actor's current role, so a workspace can never be
+  left without an owner, even under concurrent requests.
 
 - Security headers via `helmet`; `x-powered-by` disabled.
 - CORS limited to the configured frontend origin.
@@ -208,8 +219,7 @@ In place so far:
 - No real secrets in the repository: `.env` is git-ignored and `.env.example` holds
   development-only placeholders.
 
-Planned: role-based access control (Phase 3), SSRF protection for monitor requests (Phase 7),
-and further hardening (Phase 14).
+Planned: SSRF protection for monitor requests (Phase 7) and further hardening (Phase 14).
 
 ## Roadmap
 

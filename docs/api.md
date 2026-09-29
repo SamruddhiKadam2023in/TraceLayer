@@ -60,11 +60,13 @@ Limits apply per client IP and are shared across API instances (stored in Redis)
 carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `Retry-After`
 (seconds).
 
-| Endpoint              | Limit                             |
-| --------------------- | --------------------------------- |
-| `POST /auth/login`    | 10 **failed** attempts per 15 min |
-| `POST /auth/register` | 5 per hour                        |
-| `POST /auth/refresh`  | 60 per 15 min                     |
+| Endpoint                       | Limit                             |
+| ------------------------------ | --------------------------------- |
+| `POST /auth/login`             | 10 **failed** attempts per 15 min |
+| `POST /auth/register`          | 5 per hour                        |
+| `POST /auth/refresh`           | 60 per 15 min                     |
+| `POST /workspaces`             | 20 per hour, per user             |
+| `POST /workspaces/:id/members` | 30 per 15 min, per user           |
 
 ## Health
 
@@ -171,3 +173,74 @@ Requires `Authorization: Bearer <access token>`.
 - `200` with the `user` object.
 - `401 UNAUTHENTICATED` if the token is missing, malformed, expired (`Access token expired`),
   signed with the wrong key, or belongs to a deleted account.
+
+## Workspaces
+
+All workspace endpoints require `Authorization: Bearer <access token>`. Access is checked on
+every request against the caller's role (see [architecture.md](architecture.md#authorization)):
+
+- A workspace the caller does not belong to, or a malformed id, returns
+  **`404 NOT_FOUND`** ("Workspace not found"). It never returns 403, so workspace ids cannot be
+  probed.
+- A member without the required permission gets **`403 FORBIDDEN`**.
+
+A **workspace** is returned as seen by the caller:
+
+```json
+{
+  "id": "25dd6ecf-9c6f-4528-9a47-6c39b293a323",
+  "name": "Acme Engineering",
+  "role": "OWNER",
+  "memberCount": 3,
+  "createdAt": "2026-09-29T12:36:43.260Z"
+}
+```
+
+`role` is the caller's role: `OWNER`, `ADMIN`, `MEMBER` or `VIEWER`.
+
+| Method | Path                  | Required role | Result                                          |
+| ------ | --------------------- | ------------- | ----------------------------------------------- |
+| GET    | `/api/workspaces`     | any user      | `200`, the caller's workspaces sorted by name   |
+| POST   | `/api/workspaces`     | any user      | `201`, new workspace with the caller as owner   |
+| GET    | `/api/workspaces/:id` | any member    | `200`, the workspace                            |
+| PATCH  | `/api/workspaces/:id` | owner         | `200`, the renamed workspace                    |
+| DELETE | `/api/workspaces/:id` | owner         | `204`; members (and later projects) are deleted |
+
+Body for create and rename: `{ "name": string }`, 1–100 characters after trimming.
+
+### Members
+
+A **member** looks like:
+
+```json
+{
+  "userId": "ae2e4df7-0cca-4b78-915f-ac7e57e8149f",
+  "name": "Grace Hopper",
+  "email": "grace@example.com",
+  "role": "ADMIN",
+  "joinedAt": "2026-09-29T12:40:00.000Z"
+}
+```
+
+| Method | Path                                  | Required role                         | Result                            |
+| ------ | ------------------------------------- | ------------------------------------- | --------------------------------- |
+| GET    | `/api/workspaces/:id/members`         | any member                            | `200`, members by role, then name |
+| POST   | `/api/workspaces/:id/members`         | owner or admin                        | `201`, the new member             |
+| PATCH  | `/api/workspaces/:id/members/:userId` | owner or admin                        | `200`, the updated member         |
+| DELETE | `/api/workspaces/:id/members/:userId` | owner or admin; anyone for themselves | `204`                             |
+
+**Add** takes `{ "email": string, "role": Role }`. The email must belong to an existing
+TraceLayer account (compared case-insensitively).
+
+- `404 NOT_FOUND` with `details: [{ "path": "email", … }]` if no account uses the email.
+- `409 CONFLICT` with `details: [{ "path": "email", … }]` if the user is already a member.
+
+**Change role** takes `{ "role": Role }`.
+
+Rules for add, change role and remove:
+
+- Only owners may assign the `OWNER` role, or change or remove an existing owner (`403`).
+- Removing yourself (leaving) needs no management permission.
+- The last owner cannot be demoted, removed or leave: `409 CONFLICT` ("A workspace must always
+  have at least one owner"). Promote another member to owner first, or delete the workspace.
+- A `:userId` that is not a member of the workspace returns `404` ("Member not found").

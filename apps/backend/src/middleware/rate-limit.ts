@@ -1,4 +1,11 @@
-import { rateLimit, type ClientRateLimitInfo, type Options, type Store } from 'express-rate-limit';
+import {
+  ipKeyGenerator,
+  rateLimit,
+  type ClientRateLimitInfo,
+  type Options,
+  type Store,
+} from 'express-rate-limit';
+import type { Request } from 'express';
 import { env } from '../config/env';
 import { redis } from '../lib/redis';
 import { AppError } from '../utils/errors';
@@ -56,6 +63,13 @@ interface LimiterConfig {
   message: string;
   /** Only failed requests count, e.g. so successful logins never lock a user out. */
   skipSuccessfulRequests?: boolean;
+  /** Count per signed-in user instead of per client IP. Mount after `requireAuth`. */
+  perUser?: boolean;
+}
+
+/** The signed-in user's id, falling back to the client IP (IPv6 grouped by /56 subnet). */
+function userKey(req: Request): string {
+  return req.auth ? `user:${req.auth.userId}` : `ip:${ipKeyGenerator(req.ip ?? '')}`;
 }
 
 function createLimiter(config: LimiterConfig) {
@@ -63,6 +77,7 @@ function createLimiter(config: LimiterConfig) {
     windowMs: config.windowMs,
     limit: config.limit,
     skipSuccessfulRequests: config.skipSuccessfulRequests ?? false,
+    ...(config.perUser ? { keyGenerator: userKey } : {}),
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     // Tests get an in-memory store per app instance, so suites stay independent of Redis.
@@ -71,6 +86,26 @@ function createLimiter(config: LimiterConfig) {
     passOnStoreError: true,
     handler: (_req, _res, next) => next(new AppError('RATE_LIMITED', config.message)),
   });
+}
+
+/** Limits on actions that create data, counted per signed-in user. */
+export function createWorkspaceRateLimiters() {
+  return {
+    createWorkspace: createLimiter({
+      name: 'workspace-create',
+      windowMs: 60 * MINUTE_MS,
+      limit: 20,
+      perUser: true,
+      message: 'Too many workspaces created. Try again later.',
+    }),
+    addMember: createLimiter({
+      name: 'member-add',
+      windowMs: 15 * MINUTE_MS,
+      limit: 30,
+      perUser: true,
+      message: 'Too many members added. Try again in a few minutes.',
+    }),
+  };
 }
 
 /** Rate limiters are built per app so each `createApp()` (and each test) starts fresh. */
