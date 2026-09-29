@@ -15,6 +15,17 @@ export default defineConfig({
       '@tracelayer/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Libraries change rarely, so they get their own long-cached files.
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router'],
+          forms: ['react-hook-form', '@hookform/resolvers', 'zod'],
+        },
+      },
+    },
+  },
   server: {
     port: 5180,
     proxy: {

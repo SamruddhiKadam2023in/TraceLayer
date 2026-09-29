@@ -19,7 +19,6 @@ import {
 } from '@tracelayer/shared';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../utils/errors';
-import type { ProjectAccess } from './access.service';
 
 /**
  * Metrics are computed in PostgreSQL from `monitor_runs`, never from cached numbers:
@@ -30,7 +29,22 @@ import type { ProjectAccess } from './access.service';
  *   so charts show gaps instead of joining points across them.
  */
 
-type Filters = Omit<MetricsQueryParsed, 'projectId' | 'range'>;
+type Filters = Omit<MetricsQueryParsed, 'projectId' | 'workspaceId' | 'range'>;
+
+/** What the numbers cover: one project, or every project in a workspace. */
+export type MetricsScope = { projectId: string } | { workspaceId: string };
+
+function scopeSql(scope: MetricsScope, col: (name: string) => Prisma.Sql): Prisma.Sql {
+  return 'projectId' in scope
+    ? Prisma.sql`${col('project_id')} = ${scope.projectId}::uuid`
+    : Prisma.sql`${col('project_id')} IN (SELECT id FROM projects WHERE workspace_id = ${scope.workspaceId}::uuid)`;
+}
+
+function scopeWhere(scope: MetricsScope): Prisma.MonitorWhereInput {
+  return 'projectId' in scope
+    ? { projectId: scope.projectId }
+    : { project: { workspaceId: scope.workspaceId } };
+}
 
 interface Window {
   from: Date;
@@ -46,11 +60,11 @@ function describeWindow(w: Window): MetricsWindow {
   return { range: w.range, from: w.from.toISOString(), to: w.to.toISOString() };
 }
 
-/** WHERE conditions for runs of the project in the window, plus optional filters. */
-function runConditions(projectId: string, w: Window, filters: Filters, alias = ''): Prisma.Sql {
+/** WHERE conditions for runs in scope and in the window, plus optional filters. */
+function runConditions(scope: MetricsScope, w: Window, filters: Filters, alias = ''): Prisma.Sql {
   const col = (name: string) => Prisma.raw(alias ? `${alias}.${name}` : name);
   const parts = [
-    Prisma.sql`${col('project_id')} = ${projectId}::uuid`,
+    scopeSql(scope, col),
     Prisma.sql`${col('started_at')} >= ${w.from}`,
     Prisma.sql`${col('started_at')} < ${w.to}`,
   ];
@@ -80,10 +94,10 @@ function totalsFrom(total: number, successful: number): MetricsTotals {
   };
 }
 
-async function assertMonitorInProject(projectId: string, monitorId?: string): Promise<void> {
+async function assertMonitorInScope(scope: MetricsScope, monitorId?: string): Promise<void> {
   if (!monitorId) return;
   const monitor = await prisma.monitor.findFirst({
-    where: { id: monitorId, projectId },
+    where: { id: monitorId, ...scopeWhere(scope) },
     select: { id: true },
   });
   if (!monitor) throw AppError.notFound('Monitor');
@@ -108,12 +122,12 @@ interface SummaryRow {
 }
 
 export async function getSummary(
-  access: ProjectAccess,
+  scope: MetricsScope,
   range: MetricRange,
   filters: Filters,
   now?: Date,
 ): Promise<MetricsSummary> {
-  await assertMonitorInProject(access.projectId, filters.monitorId);
+  await assertMonitorInScope(scope, filters.monitorId);
   const w = windowFor(range, now);
   const responded = Prisma.sql`status_code IS NOT NULL`;
   const [row] = await prisma.$queryRaw<SummaryRow[]>`
@@ -132,7 +146,7 @@ export async function getSummary(
       count(*) FILTER (WHERE status_code >= 500)::int              AS s5xx,
       count(*) FILTER (WHERE status_code IS NULL)::int             AS no_response
     FROM monitor_runs
-    WHERE ${runConditions(access.projectId, w, filters)}`;
+    WHERE ${runConditions(scope, w, filters)}`;
 
   const r = row!;
   const latency: LatencyStats = {
@@ -166,7 +180,7 @@ interface BucketRow {
 }
 
 /** One row per bucket across the whole window, including empty buckets. */
-async function buckets(access: ProjectAccess, w: Window, filters: Filters): Promise<BucketRow[]> {
+async function buckets(scope: MetricsScope, w: Window, filters: Filters): Promise<BucketRow[]> {
   const step = Prisma.sql`${`${RANGE_CONFIG[w.range].bucketMs} milliseconds`}::interval`;
   const origin = new Date('2000-01-01T00:00:00Z');
   return prisma.$queryRaw<BucketRow[]>`
@@ -177,7 +191,7 @@ async function buckets(access: ProjectAccess, w: Window, filters: Filters): Prom
     runs AS (
       SELECT date_bin(${step}, started_at, ${origin}::timestamptz) AS t, success, status_code, duration_ms
       FROM monitor_runs
-      WHERE ${runConditions(access.projectId, w, filters)}
+      WHERE ${runConditions(scope, w, filters)}
     )
     SELECT
       s.t,
@@ -194,14 +208,14 @@ async function buckets(access: ProjectAccess, w: Window, filters: Filters): Prom
 }
 
 export async function getLatencySeries(
-  access: ProjectAccess,
+  scope: MetricsScope,
   range: MetricRange,
   filters: Filters,
   now?: Date,
 ): Promise<TimeSeries<LatencyPoint>> {
-  await assertMonitorInProject(access.projectId, filters.monitorId);
+  await assertMonitorInScope(scope, filters.monitorId);
   const w = windowFor(range, now);
-  const rows = await buckets(access, w, filters);
+  const rows = await buckets(scope, w, filters);
   return {
     ...describeWindow(w),
     bucketMs: RANGE_CONFIG[range].bucketMs,
@@ -216,14 +230,14 @@ export async function getLatencySeries(
 }
 
 export async function getErrorSeries(
-  access: ProjectAccess,
+  scope: MetricsScope,
   range: MetricRange,
   filters: Filters,
   now?: Date,
 ): Promise<TimeSeries<ErrorPoint>> {
-  await assertMonitorInProject(access.projectId, filters.monitorId);
+  await assertMonitorInScope(scope, filters.monitorId);
   const w = windowFor(range, now);
-  const rows = await buckets(access, w, filters);
+  const rows = await buckets(scope, w, filters);
   return {
     ...describeWindow(w),
     bucketMs: RANGE_CONFIG[range].bucketMs,
@@ -274,7 +288,7 @@ interface MonitorRow {
 }
 
 export async function getOverview(
-  access: ProjectAccess,
+  scope: MetricsScope,
   range: MetricRange,
   filters: Filters,
   now?: Date,
@@ -282,7 +296,7 @@ export async function getOverview(
   const w = windowFor(range, now);
   const monitors = await prisma.monitor.findMany({
     where: {
-      projectId: access.projectId,
+      ...scopeWhere(scope),
       ...(filters.monitorId ? { id: filters.monitorId } : {}),
       ...(filters.endpointId ? { endpointId: filters.endpointId } : {}),
       ...(filters.environmentId ? { environmentId: filters.environmentId } : {}),
@@ -290,8 +304,9 @@ export async function getOverview(
     include: {
       endpoint: { select: { id: true, name: true, method: true } },
       environment: { select: { id: true, name: true } },
+      project: { select: { id: true, name: true } },
     },
-    orderBy: { name: 'asc' },
+    orderBy: [{ project: { name: 'asc' } }, { name: 'asc' }],
   });
 
   const rows =
@@ -304,7 +319,7 @@ export async function getOverview(
                  avg(duration_ms) FILTER (WHERE status_code IS NOT NULL)::float8 AS avg,
                  percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE status_code IS NOT NULL) AS p95
           FROM monitor_runs
-          WHERE ${runConditions(access.projectId, w, filters)}
+          WHERE ${runConditions(scope, w, filters)}
           GROUP BY monitor_id`;
   const stats = new Map(rows.map((r) => [r.monitor_id, r]));
   const health = await healthByMonitor(monitors.map((m) => m.id));
@@ -319,6 +334,7 @@ export async function getOverview(
     counts[status]++;
     return {
       monitor: { id: m.id, name: m.name, enabled: m.enabled },
+      project: m.project,
       endpoint: m.endpoint,
       environment: m.environment,
       health: status,

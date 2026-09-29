@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { ChevronLeft, SearchX, Trash2 } from 'lucide-react';
 import { hasPermission, type EndpointRequest, type ExecutionResult } from '@tracelayer/shared';
 import { ResponseViewer } from '@/components/requests/ResponseViewer';
+import { LazyAnalyticsView as AnalyticsView } from '@/components/analytics/LazyAnalyticsView';
 import { executeRequest } from '@/services/request.service';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -186,6 +187,16 @@ export function EndpointDetailPage() {
         onSend={canManage ? runner.send : undefined}
       />
       {canManage && <ResponsePanel result={runner.result} />}
+
+      <section aria-labelledby="endpoint-analytics-heading" className="mt-10">
+        <h2 id="endpoint-analytics-heading" className="mb-3 text-base font-semibold">
+          Analytics
+        </h2>
+        <AnalyticsView
+          scope={{ projectId: project.id, endpointId: current.id }}
+          createMonitorHref="../../monitors/new"
+        />
+      </section>
 
       {deleting && (
         <ConfirmDialog

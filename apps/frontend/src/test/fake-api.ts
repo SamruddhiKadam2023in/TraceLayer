@@ -4,7 +4,12 @@ import {
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
-import type { AuthSession, WorkspaceSummary } from '@tracelayer/shared';
+import type {
+  AuthSession,
+  MetricsOverview,
+  MetricsSummary,
+  WorkspaceSummary,
+} from '@tracelayer/shared';
 import { api } from '@/services/api';
 
 export type FakeResponse = [status: number, body: unknown];
@@ -106,3 +111,43 @@ export function makeWorkspace(overrides: Partial<WorkspaceSummary> = {}): Worksp
 
 /** The signed-in user belongs to one workspace; add to every signed-in scenario. */
 export const ONE_WORKSPACE: FakeResponse = [200, ok([makeWorkspace()])];
+
+// ─── Metrics fixtures ────────────────────────────────────────────────────────
+
+const WINDOW = { range: '24h', from: '2026-09-29T10:00:00.000Z', to: '2026-09-30T10:00:00.000Z' };
+
+export function makeSummary(overrides: Partial<MetricsSummary> = {}): MetricsSummary {
+  return {
+    ...(WINDOW as Pick<MetricsSummary, 'range' | 'from' | 'to'>),
+    totals: { total: 1440, successful: 1437, failed: 3, uptime: 99.79, errorRate: 0.21 },
+    latency: { avg: 184, min: 90, max: 1210, p50: 170, p95: 641, p99: 1200 },
+    statusCodes: { '2xx': 1437, '3xx': 0, '4xx': 1, '5xx': 1, noResponse: 1 },
+    ...overrides,
+  };
+}
+
+/** Handlers for every metrics endpoint: a summary, flat series and an overview. */
+export function metricsHandlers(
+  options: { summary?: MetricsSummary; monitors?: MetricsOverview['monitors'] } = {},
+): Record<string, FakeResponse> {
+  const t = '2026-09-30T09:00:00.000Z';
+  const monitors = options.monitors ?? [];
+  const health = { HEALTHY: 0, DEGRADED: 0, FAILING: 0, NO_DATA: 0 };
+  for (const m of monitors) health[m.health]++;
+  return {
+    'GET /metrics/summary': [200, ok(options.summary ?? makeSummary())],
+    'GET /metrics/latency': [
+      200,
+      ok({
+        ...WINDOW,
+        bucketMs: 900_000,
+        points: [{ t, avg: 184, p50: 170, p95: 641, p99: 1200 }],
+      }),
+    ],
+    'GET /metrics/errors': [
+      200,
+      ok({ ...WINDOW, bucketMs: 900_000, points: [{ t, total: 15, failed: 1, errorRate: 6.67 }] }),
+    ],
+    'GET /metrics': [200, ok({ ...WINDOW, monitors, health })],
+  };
+}

@@ -4,13 +4,14 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 8 of 20 (Metrics) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 9 of 20 (Analytics dashboard) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
 > and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
 > SSRF-protected request builder with a response viewer and searchable request history. Monitors
 > run endpoints on a schedule (Redis + BullMQ + a dedicated worker) and record every result;
-> uptime, error rate, latency percentiles and health are computed from those runs.
+> uptime, error rate, latency percentiles and health are computed from those runs and shown
+> on a workspace dashboard and per-project, per-endpoint and per-monitor analytics with charts.
 > Product features are added phase by
 > phase following the [master specification](docs/SPEC.md). Sections below marked _(planned)_
 > describe features that do not exist yet.
@@ -38,20 +39,20 @@ monitoring and investigation tool, not a Postman clone.
 
 ## Product features
 
-| Feature                                                                  | Status                    |
-| ------------------------------------------------------------------------ | ------------------------- |
-| System status page (live API, database, Redis and worker health)         | ✅ Phase 1                |
-| Accounts and authentication (JWT access + rotating refresh tokens)       | ✅ Phase 2                |
-| Workspaces with roles (owner, admin, member, viewer)                     | ✅ Phase 3                |
-| Projects, environments and environment variables (encrypted secrets)     | ✅ Phase 4                |
-| API endpoints: method, URL, headers, params, body, auth, timeout, tags   | ✅ Phase 5                |
-| Request builder with response viewer and request history, SSRF-protected | ✅ Phase 6                |
-| Scheduled monitors (availability, status, performance, validation)       | ✅ Phase 7                |
-| Metrics: uptime, error rate, P50/P95/P99, status codes, health           | ✅ Phase 8                |
-| Analytics dashboard and charts                                           | _(planned, Phase 9)_      |
-| Alert rules, incidents and incident timelines                            | _(planned, Phases 10–11)_ |
-| Real-time dashboard updates                                              | _(planned, Phase 12)_     |
-| API dependency map                                                       | _(planned, Phase 13)_     |
+| Feature                                                                               | Status                    |
+| ------------------------------------------------------------------------------------- | ------------------------- |
+| System status page (live API, database, Redis and worker health)                      | ✅ Phase 1                |
+| Accounts and authentication (JWT access + rotating refresh tokens)                    | ✅ Phase 2                |
+| Workspaces with roles (owner, admin, member, viewer)                                  | ✅ Phase 3                |
+| Projects, environments and environment variables (encrypted secrets)                  | ✅ Phase 4                |
+| API endpoints: method, URL, headers, params, body, auth, timeout, tags                | ✅ Phase 5                |
+| Request builder with response viewer and request history, SSRF-protected              | ✅ Phase 6                |
+| Scheduled monitors (availability, status, performance, validation)                    | ✅ Phase 7                |
+| Metrics: uptime, error rate, P50/P95/P99, status codes, health                        | ✅ Phase 8                |
+| Analytics dashboard: metric cards, latency/error/volume/status charts, monitor health | ✅ Phase 9                |
+| Alert rules, incidents and incident timelines                                         | _(planned, Phases 10–11)_ |
+| Real-time dashboard updates                                                           | _(planned, Phase 12)_     |
+| API dependency map                                                                    | _(planned, Phase 13)_     |
 
 ## Architecture
 
@@ -76,14 +77,14 @@ The full design, including every component and the Docker topology, is in
 
 ## Technology stack
 
-| Area     | Technology                                                                                         |
-| -------- | -------------------------------------------------------------------------------------------------- |
-| Frontend | React 19, TypeScript, Vite 6, Tailwind CSS 4, React Router 7, Zustand, axios, React Hook Form, Zod |
-| Backend  | Node.js 20+, Express 5, TypeScript, Zod, pino, jsonwebtoken, bcrypt (bcryptjs), express-rate-limit |
-| Database | PostgreSQL 16, Prisma 6                                                                            |
-| Jobs     | Redis 7, BullMQ 5, ioredis                                                                         |
-| Testing  | Jest + Supertest (backend, worker), Vitest + Testing Library (frontend)                            |
-| Tooling  | pnpm workspaces, ESLint 9, Prettier 3, Docker Compose                                              |
+| Area     | Technology                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------ |
+| Frontend | React 19, TypeScript, Vite 6, Tailwind CSS 4, React Router 7, Zustand, axios, React Hook Form, Zod, Recharts |
+| Backend  | Node.js 20+, Express 5, TypeScript, Zod, pino, jsonwebtoken, bcrypt (bcryptjs), express-rate-limit           |
+| Database | PostgreSQL 16, Prisma 6                                                                                      |
+| Jobs     | Redis 7, BullMQ 5, ioredis                                                                                   |
+| Testing  | Jest + Supertest (backend, worker), Vitest + Testing Library (frontend)                                      |
+| Tooling  | pnpm workspaces, ESLint 9, Prettier 3, Docker Compose                                                        |
 
 ## Local development
 
@@ -176,7 +177,7 @@ Current coverage:
   validation per type, scheduling calls, unscheduling on cascading deletes, run history and
   access. Metrics: totals, uptime, error rate, exact P50/P95/P99 against hand-computed values,
   latency excluding timeouts, status distribution, gap-filled time series, filters, and the
-  health rules.
+  health rules, for a project or a whole workspace.
 - **Executor (Jest):** SSRF address and hostname rules (including IPv4-mapped IPv6, NAT64 and
   hex/decimal IPv4 tricks), request preparation, and real HTTP execution against local servers:
   timeouts, gzip, size caps, binary bodies, redirects and credential handling.
@@ -194,7 +195,9 @@ Current coverage:
   raw JSON, headers, the sent request), error states, and the history table with URL-backed
   filters, sorting and paging; the monitor list, creating each monitor type (including JSON
   checks), run history, run now and pause/resume; health badges and the metrics panel (range
-  switching, "—" when there is no data).
+  switching, "—" when there is no data); the dashboard and analytics views (workspace, project
+  and endpoint scopes, chart text summaries, monitor health table, empty and error states with
+  retry).
 
 End-to-end tests with Playwright arrive in Phase 15, and a GitHub Actions pipeline running all of
 the above in Phase 16.

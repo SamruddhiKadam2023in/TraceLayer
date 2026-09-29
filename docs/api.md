@@ -615,11 +615,11 @@ started before it). Each run looks like:
 Readable by every member of the project's workspace. Every metrics endpoint accepts the same
 query parameters:
 
-| Query parameter                            | Meaning                                                 |
-| ------------------------------------------ | ------------------------------------------------------- |
-| `projectId` (required)                     | The project                                             |
-| `range`                                    | `1h`, `6h`, `24h` (default), `7d` or `30d`, ending now  |
-| `monitorId`, `endpointId`, `environmentId` | Optional filters (a monitor of another project → `404`) |
+| Query parameter                            | Meaning                                                                 |
+| ------------------------------------------ | ----------------------------------------------------------------------- |
+| `projectId` or `workspaceId`               | Exactly one: a project, or every project in a workspace (the dashboard) |
+| `range`                                    | `1h`, `6h`, `24h` (default), `7d` or `30d`, ending now                  |
+| `monitorId`, `endpointId`, `environmentId` | Optional filters (a monitor of another project → `404`)                 |
 
 Rate limit: 120 requests per minute, per user.
 
@@ -674,6 +674,7 @@ One row per monitor in the project (after filters), plus a count per health stat
   "monitors": [
     {
       "monitor": { "id": "…", "name": "Production health", "enabled": true },
+      "project": { "id": "…", "name": "Orders API" },
       "endpoint": { "id": "…", "name": "Health", "method": "GET" },
       "environment": { "id": "…", "name": "Production" },
       "health": "DEGRADED",

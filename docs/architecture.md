@@ -4,8 +4,8 @@ TraceLayer is a pnpm monorepo with three runnable apps (frontend, backend, worke
 packages (database client, shared types). PostgreSQL is the system of record; Redis carries the job
 queue, the worker heartbeat, rate-limit counters and, later, real-time fan-out.
 
-> **Status:** this document covers Phases 1–8 (foundation, authentication, workspaces, projects, endpoints, request
-> execution, monitoring, metrics). Sections marked _(planned)_ describe
+> **Status:** this document covers Phases 1–9 (foundation, authentication, workspaces, projects, endpoints, request
+> execution, monitoring, metrics, analytics). Sections marked _(planned)_ describe
 > the target design from [SPEC.md](SPEC.md) and are filled in by the phase noted.
 
 ## System diagram
@@ -83,8 +83,8 @@ docker-compose.yml
 - Signed-in routes also sit behind `RequireWorkspace`, which loads the user's workspaces and
   guarantees a current one. Users with none see the "create your first workspace" screen.
 - Screens so far: sign-in, sign-up, first-workspace onboarding, **Projects** (list and create),
-  a **project page** with Overview, Endpoints, Monitors, History, Environments and Settings
-  tabs, the **endpoint
+  the **Dashboard** (home page), a **project page** with Overview, Endpoints, Monitors,
+  Analytics, History, Environments and Settings tabs, the **endpoint
   editor**, **System Status** (the live
   `/api/health` report) and **Workspace settings** (rename, members, leave, delete). The top
   bar holds the workspace switcher. Sidebar entries are added as each feature is built, so there
@@ -604,6 +604,59 @@ The latest runs for a whole list of monitors are fetched in one query (`row_numb
 monitor). The same function drives the badges in the UI, `health` on every monitor, and the
 health counts in `GET /api/metrics`. The UI shows health with an icon and a word
 (Healthy ✓, Degraded !, Failing ×), not by colour alone.
+
+## Analytics dashboard
+
+One component, `AnalyticsView` (`apps/frontend/src/components/analytics`), renders analytics for
+any scope. It appears in four places:
+
+| Where                          | Scope                   | Shows                                            |
+| ------------------------------ | ----------------------- | ------------------------------------------------ |
+| **Dashboard** (`/`, home page) | the current workspace   | everything, with the project on each monitor row |
+| Project → **Analytics** tab    | one project             | everything                                       |
+| Endpoint page → Analytics      | one endpoint (spec §23) | everything, limited to its monitors              |
+| Monitor page                   | one monitor             | cards and charts (no monitor table)              |
+
+**Contents** (spec §21–22):
+
+- **Metric cards:** uptime, checks (and failures), error rate, average, P95, P99, and either
+  the monitor count (with how many are failing) or P50.
+- **Charts** (Recharts):
+  - latency over time (average, P95, P99);
+  - error rate over time;
+  - request volume (passed/failed stacked bars);
+  - status codes (a donut with counts in the legend).
+- **Monitor health:** counts per state and a table with uptime, error rate, average and P95 per
+  monitor, linking to each monitor.
+- A **range picker** (1h, 6h, 24h, 7d, 30d) refetches every panel.
+
+All data comes from the metrics API (see _Metrics and health_). On the dashboard the scope is
+`workspaceId`, and the API aggregates every project in the workspace. Nothing is hard-coded or
+sampled.
+
+**States (spec §43).**
+
+- Every panel loads independently, with a skeleton while loading.
+- A failed panel shows the error and a Retry button, and the other panels still show their data.
+- An empty period says so ("No responses in this period.") rather than drawing an empty chart.
+- A scope with no monitors shows "No monitors configured yet" with a link to create one.
+
+**Accessibility and theming.**
+
+- Each chart is a `figure` with `role="img"` and a one-sentence text summary of its data, e.g.
+  "Latency last 24 hours: average 184 ms, P95 641 ms, P99 1.20 s", read by screen readers in
+  place of the picture.
+- Health uses icon plus text badges.
+- Chart colours are read from the theme's CSS variables (`useChartColors`) and re-read when
+  the light/dark class on `<html>` changes, so charts follow the theme.
+- Time axes show clock time for ranges up to 24 hours and dates beyond that.
+- Empty buckets stay gaps: lines are not joined across periods without data.
+
+**Bundle size.** Recharts is the largest dependency. `LazyAnalyticsView` loads the analytics code
+on demand, so it is not part of the initial download (sign-in, projects, settings). Vite's
+`manualChunks` puts React/React Router and the form libraries in separate long-cached files.
+This cut the initial JavaScript from one 1.1 MB file to about 667 KB (205 KB gzipped). The
+charts file (about 445 KB) is fetched the first time a page with charts opens.
 
 ## Configuration
 

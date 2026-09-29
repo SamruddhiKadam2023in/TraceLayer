@@ -267,6 +267,79 @@ describe('GET /api/metrics (per monitor)', () => {
   });
 });
 
+describe('workspace scope (the dashboard)', () => {
+  async function projectWithRun(wsId: string, name: string, success: boolean) {
+    const project = await prisma.project.create({ data: { workspaceId: wsId, name } });
+    const endpoint = await prisma.endpoint.create({
+      data: { projectId: project.id, name: 'E', method: 'GET', url: 'https://x.example.com/' },
+    });
+    const monitor = await prisma.monitor.create({
+      data: {
+        projectId: project.id,
+        endpointId: endpoint.id,
+        name: `${name} monitor`,
+        type: 'STATUS',
+        intervalSeconds: 60,
+        timeoutMs: 5000,
+      },
+    });
+    await prisma.monitorRun.create({
+      data: {
+        monitorId: monitor.id,
+        projectId: project.id,
+        endpointId: endpoint.id,
+        startedAt: ago(3 * MINUTE),
+        success,
+        statusCode: success ? 200 : 503,
+        durationMs: 250,
+      },
+    });
+  }
+
+  it('aggregates every project in the workspace, and nothing outside it', async () => {
+    await projectWithRun(workspaceId, 'Second project', true);
+    const otherWorkspace = await prisma.workspace.create({ data: { name: 'Elsewhere' } });
+    await projectWithRun(otherWorkspace.id, 'Not ours', false);
+
+    const res = await request(app)
+      .get('/api/metrics/summary')
+      .query({ workspaceId, range: '24h' })
+      .set(owner.auth);
+    // The 8 runs of the first project plus 1 from the second; the other workspace's run is excluded.
+    expect(res.body.data.totals).toMatchObject({ total: 9, successful: 6, failed: 3 });
+
+    const overview = await request(app).get('/api/metrics').query({ workspaceId }).set(owner.auth);
+    expect(
+      overview.body.data.monitors.map(
+        (m: { project: { name: string }; monitor: { name: string } }) =>
+          `${m.project.name} / ${m.monitor.name}`,
+      ),
+    ).toEqual([
+      'Orders API / A orders',
+      'Orders API / B payments',
+      'Orders API / C never ran',
+      'Second project / Second project monitor',
+    ]);
+  });
+
+  it('requires exactly one of projectId and workspaceId, and membership', async () => {
+    const neither = await request(app).get('/api/metrics/summary').set(owner.auth);
+    expect(neither.status).toBe(400);
+    const both = await request(app)
+      .get('/api/metrics/summary')
+      .query({ projectId, workspaceId })
+      .set(owner.auth);
+    expect(both.status).toBe(400);
+
+    const outsider = await createTestUser(app, 'Eve Outsider');
+    const res = await request(app)
+      .get('/api/metrics/summary')
+      .query({ workspaceId })
+      .set(outsider.auth);
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('metrics access and validation', () => {
   it('is readable by viewers and hidden from outsiders', async () => {
     const viewer = await createTestUser(app, 'Vic Viewer');

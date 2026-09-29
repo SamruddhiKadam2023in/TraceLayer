@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
+import { createBrowserRouter, type RouteObject } from 'react-router';
 import { RootLayout } from '@/layouts/RootLayout';
 import { AppLayout } from '@/layouts/AppLayout';
 import { AuthLayout } from '@/layouts/AuthLayout';
@@ -15,6 +15,8 @@ import { ProjectSettingsPage } from '@/pages/project/ProjectSettingsPage';
 import { ProjectEndpointsPage } from '@/pages/project/ProjectEndpointsPage';
 import { ProjectHistoryPage } from '@/pages/project/ProjectHistoryPage';
 import { ProjectMonitorsPage } from '@/pages/project/ProjectMonitorsPage';
+import { ProjectAnalyticsPage } from '@/pages/project/ProjectAnalyticsPage';
+import { DashboardPage } from '@/pages/DashboardPage';
 import { MonitorCreatePage, MonitorDetailPage } from '@/pages/project/MonitorPages';
 import { EndpointCreatePage, EndpointDetailPage } from '@/pages/project/EndpointEditorPages';
 import { RedirectIfAuthenticated, RequireAuth, RequireWorkspace } from './guards';
@@ -44,8 +46,7 @@ export const routes: RouteObject[] = [
               {
                 element: <AppLayout />,
                 children: [
-                  // The dashboard replaces this redirect when it is built (Phase 9).
-                  { path: '/', element: <Navigate to="/projects" replace /> },
+                  { path: '/', element: <DashboardPage /> },
                   { path: '/projects', element: <ProjectsPage /> },
                   {
                     path: '/projects/:projectId',
@@ -58,6 +59,7 @@ export const routes: RouteObject[] = [
                       { path: 'monitors', element: <ProjectMonitorsPage /> },
                       { path: 'monitors/new', element: <MonitorCreatePage /> },
                       { path: 'monitors/:monitorId', element: <MonitorDetailPage /> },
+                      { path: 'analytics', element: <ProjectAnalyticsPage /> },
                       { path: 'history', element: <ProjectHistoryPage /> },
                       { path: 'environments', element: <ProjectEnvironmentsPage /> },
                       { path: 'settings', element: <ProjectSettingsPage /> },

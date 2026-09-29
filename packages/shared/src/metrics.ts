@@ -19,13 +19,20 @@ export const RANGE_CONFIG: Record<
   '30d': { label: 'Last 30 days', durationMs: 30 * 24 * HOUR, bucketMs: 6 * HOUR },
 };
 
-export const metricsQuerySchema = z.object({
-  projectId: z.uuid('Invalid project'),
-  range: z.enum(METRIC_RANGES).default('24h'),
-  monitorId: z.uuid('Invalid monitor').optional(),
-  endpointId: z.uuid('Invalid endpoint').optional(),
-  environmentId: z.uuid('Invalid environment').optional(),
-});
+/** Scope: one project, or every project in a workspace (the dashboard). Exactly one is required. */
+export const metricsQuerySchema = z
+  .object({
+    projectId: z.uuid('Invalid project').optional(),
+    workspaceId: z.uuid('Invalid workspace').optional(),
+    range: z.enum(METRIC_RANGES).default('24h'),
+    monitorId: z.uuid('Invalid monitor').optional(),
+    endpointId: z.uuid('Invalid endpoint').optional(),
+    environmentId: z.uuid('Invalid environment').optional(),
+  })
+  .refine((q) => (q.projectId === undefined) !== (q.workspaceId === undefined), {
+    path: ['projectId'],
+    message: 'Give either projectId or workspaceId',
+  });
 export type MetricsQuery = z.input<typeof metricsQuerySchema>;
 export type MetricsQueryParsed = z.output<typeof metricsQuerySchema>;
 
@@ -126,6 +133,7 @@ export function computeHealth(recentRuns: readonly { success: boolean }[]): Heal
 
 export interface MonitorMetrics {
   monitor: { id: string; name: string; enabled: boolean };
+  project: { id: string; name: string };
   endpoint: { id: string; name: string; method: string };
   environment: { id: string; name: string } | null;
   health: HealthStatus;

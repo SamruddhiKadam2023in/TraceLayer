@@ -17,6 +17,7 @@ import {
   installFakeApi,
   makeSession,
   makeWorkspace,
+  metricsHandlers,
   ok,
   type FakeResponse,
   type Handler,
@@ -152,7 +153,7 @@ function api(role: WorkspaceRole, extra: Record<string, Handler | FakeResponse> 
         }),
       ]),
     ],
-    'GET /metrics/summary': [200, ok(SUMMARY)],
+    ...metricsHandlers({ summary: SUMMARY }),
     ...extra,
   });
 }
@@ -291,30 +292,35 @@ describe('monitor detail', () => {
   });
 });
 
-describe('monitor metrics', () => {
-  it('shows uptime, latency percentiles and status codes, and refetches for another range', async () => {
+describe('monitor analytics', () => {
+  it('shows uptime and latency percentiles, and refetches every panel for another range', async () => {
     const fake = api('VIEWER');
     renderApp('/projects/proj-1/monitors/mon-1');
 
-    const metrics = await screen.findByRole('region', { name: /Metrics/ });
+    const metrics = await screen.findByRole('region', { name: 'Key metrics' });
     expect(await within(metrics).findByText('99.79%')).toBeInTheDocument();
     expect(within(metrics).getByText('641ms')).toBeInTheDocument(); // P95
     expect(within(metrics).getByText('1.20s')).toBeInTheDocument(); // P99
     expect(within(metrics).getByText('3 failed')).toBeInTheDocument();
-    const codes = within(metrics).getByRole('list', { name: 'Status code distribution' });
-    expect(within(codes).getByText('1437')).toBeInTheDocument();
+    // Charts carry a text summary for screen readers.
+    expect(
+      await screen.findByRole('img', {
+        name: /Status codes last 24 hours: 2xx 1437, 3xx 0, 4xx 1, 5xx 1/,
+      }),
+    ).toBeInTheDocument();
 
     expect(fake.callsTo('GET', '/metrics/summary')[0]?.params).toEqual({
       projectId: 'proj-1',
       monitorId: 'mon-1',
       range: '24h',
     });
-    await userEvent.click(within(metrics).getByRole('radio', { name: '7d' }));
-    expect(within(metrics).getByRole('radio', { name: '7d' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-    expect(fake.callsTo('GET', '/metrics/summary').at(-1)?.params).toMatchObject({ range: '7d' });
+    // A single monitor's page does not need the per-monitor overview.
+    expect(fake.callsTo('GET', '/metrics')).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole('radio', { name: '7d' }));
+    for (const path of ['/metrics/summary', '/metrics/latency', '/metrics/errors']) {
+      expect(fake.callsTo('GET', path).at(-1)?.params).toMatchObject({ range: '7d' });
+    }
   });
 
   it('shows a dash, not a made-up number, when there is no data', async () => {
@@ -331,9 +337,8 @@ describe('monitor metrics', () => {
     });
     renderApp('/projects/proj-1/monitors/mon-1');
 
-    const metrics = await screen.findByRole('region', { name: /Metrics/ });
-    expect(await within(metrics).findByText('No runs in this period.')).toBeInTheDocument();
-    const uptime = within(metrics).getByText('Uptime').parentElement!;
+    const metrics = await screen.findByRole('region', { name: 'Key metrics' });
+    const uptime = (await within(metrics).findByText('Uptime')).parentElement!;
     expect(within(uptime).getByText('—')).toBeInTheDocument();
   });
 });

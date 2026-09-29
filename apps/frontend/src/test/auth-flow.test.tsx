@@ -11,6 +11,7 @@ import {
   apiError,
   installFakeApi,
   makeSession,
+  metricsHandlers,
   ok,
   ONE_WORKSPACE,
   UNAUTHENTICATED,
@@ -51,12 +52,12 @@ describe('session restore and route protection', () => {
     installFakeApi({
       'POST /auth/refresh': [200, ok(makeSession())],
       'GET /workspaces': ONE_WORKSPACE,
-      'GET /projects': [200, ok([])],
+      ...metricsHandlers(),
     });
     renderApp('/login');
 
-    // Signed-in users land on the home page, the project list.
-    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument();
+    // Signed-in users land on the home page, the dashboard.
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Account menu for Ada Lovelace' }),
     ).toBeInTheDocument();
@@ -183,13 +184,13 @@ describe('create account', () => {
       'POST /auth/refresh': UNAUTHENTICATED,
       'POST /auth/register': [201, ok(makeSession())],
       'GET /workspaces': ONE_WORKSPACE,
-      'GET /projects': [200, ok([])],
+      ...metricsHandlers(),
     });
     renderApp('/register');
 
     await fillForm();
 
-    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect(useAuthStore.getState().user?.email).toBe('ada@example.com');
   });
 });

@@ -15,7 +15,7 @@ import { MethodBadge } from '@/components/endpoints/MethodBadge';
 import { MonitorForm } from '@/components/monitors/MonitorForm';
 import { toFormValues } from '@/components/monitors/monitor-form-schema';
 import { HealthBadge } from '@/components/monitors/HealthBadge';
-import { MetricsPanel } from '@/components/metrics/MetricsPanel';
+import { LazyAnalyticsView as AnalyticsView } from '@/components/analytics/LazyAnalyticsView';
 import { formatBytes } from '@/components/requests/status';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useProject } from '@/hooks/useProject';
@@ -377,7 +377,10 @@ export function MonitorDetailPage() {
 
       {actionError && <ErrorAlert>{actionError}</ErrorAlert>}
       <Summary monitor={current} />
-      <MetricsPanel scope={{ projectId: project.id, monitorId: current.id }} />
+      <AnalyticsView
+        scope={{ projectId: project.id, monitorId: current.id }}
+        showMonitors={false}
+      />
 
       <section aria-labelledby="runs-heading" className="flex flex-col gap-2">
         <h3 id="runs-heading" className="text-sm font-semibold">
