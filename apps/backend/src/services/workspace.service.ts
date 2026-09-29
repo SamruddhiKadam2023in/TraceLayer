@@ -1,6 +1,7 @@
 import type { WorkspaceSummary } from '@tracelayer/shared';
 import type { Workspace, WorkspaceRole } from '@tracelayer/db';
 import { prisma } from '../lib/prisma';
+import { compareNames } from '../utils/sort';
 import type { WorkspaceAccess } from './access.service';
 
 const withMemberCount = { _count: { select: { members: true } } } as const;
@@ -23,9 +24,10 @@ export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]
   const memberships = await prisma.workspaceMember.findMany({
     where: { userId },
     include: { workspace: { include: withMemberCount } },
-    orderBy: { workspace: { name: 'asc' } },
   });
-  return memberships.map((m) => toSummary(m.workspace, m.role));
+  return memberships
+    .map((m) => toSummary(m.workspace, m.role))
+    .sort((a, b) => compareNames(a.name, b.name));
 }
 
 /** Creates a workspace with its creator as the first owner, atomically. */

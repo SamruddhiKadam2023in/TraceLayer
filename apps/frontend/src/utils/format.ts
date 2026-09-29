@@ -18,3 +18,15 @@ export function formatDuration(totalSeconds: number): string {
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour12: false });
 }
+
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}

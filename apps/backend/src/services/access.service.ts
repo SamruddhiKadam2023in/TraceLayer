@@ -39,3 +39,30 @@ export async function authorizeWorkspace(
   if (!hasPermission(membership.role, permission)) throw AppError.forbidden();
   return { workspaceId, userId, role: membership.role };
 }
+
+export interface ProjectAccess extends WorkspaceAccess {
+  projectId: string;
+}
+
+/**
+ * Checks `permission` in the workspace that owns the project. Anyone who cannot see the
+ * workspace gets "Project not found", exactly as if the project did not exist.
+ */
+export async function authorizeProject(
+  userId: string,
+  projectId: string,
+  permission: Permission,
+): Promise<ProjectAccess> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { workspaceId: true },
+  });
+  if (!project) throw AppError.notFound('Project');
+  try {
+    const access = await authorizeWorkspace(userId, project.workspaceId, permission);
+    return { ...access, projectId };
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'NOT_FOUND') throw AppError.notFound('Project');
+    throw err;
+  }
+}

@@ -63,7 +63,7 @@ describe('workspace CRUD', () => {
   it('lists only the workspaces the user belongs to, with their role', async () => {
     const other = await createTestUser(app, 'Oscar Other');
     await createWorkspace(owner, 'Zeta');
-    const shared = await createWorkspace(other, 'Alpha');
+    const shared = await createWorkspace(other, 'alpha');
     await createWorkspace(other, 'Not mine');
     await addMember(shared, owner, 'VIEWER');
 
@@ -71,7 +71,7 @@ describe('workspace CRUD', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.map((w: { name: string; role: string }) => [w.name, w.role])).toEqual([
-      ['Alpha', 'VIEWER'],
+      ['alpha', 'VIEWER'],
       ['Zeta', 'OWNER'],
     ]);
   });

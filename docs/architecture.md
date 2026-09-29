@@ -4,7 +4,7 @@ TraceLayer is a pnpm monorepo with three runnable apps (frontend, backend, worke
 packages (database client, shared types). PostgreSQL is the system of record; Redis carries the job
 queue, the worker heartbeat, rate-limit counters and, later, real-time fan-out.
 
-> **Status:** this document covers Phases 1–3 (foundation, authentication, workspaces). Sections marked _(planned)_ describe
+> **Status:** this document covers Phases 1–4 (foundation, authentication, workspaces, projects). Sections marked _(planned)_ describe
 > the target design from [SPEC.md](SPEC.md) and are filled in by the phase noted.
 
 ## System diagram
@@ -81,7 +81,8 @@ docker-compose.yml
   content). See [Authentication](#authentication) for how the guards decide.
 - Signed-in routes also sit behind `RequireWorkspace`, which loads the user's workspaces and
   guarantees a current one. Users with none see the "create your first workspace" screen.
-- Screens so far: sign-in, sign-up, first-workspace onboarding, **System Status** (the live
+- Screens so far: sign-in, sign-up, first-workspace onboarding, **Projects** (list and create),
+  a **project page** with Overview, Environments and Settings tabs, **System Status** (the live
   `/api/health` report) and **Workspace settings** (rename, members, leave, delete). The top
   bar holds the workspace switcher. Sidebar entries are added as each feature is built, so there
   are no placeholder pages.
@@ -166,8 +167,8 @@ Both shapes are defined once in `@tracelayer/shared` and used by the backend and
 - PostgreSQL 16 is the system of record. Prisma 6 provides the schema, migrations and a typed
   client, published inside the monorepo as `@tracelayer/db` and shared by the backend and worker.
 - Models are added phase by phase, each with its own migration. Current tables: `users`,
-  `refresh_tokens`, `workspaces` and `workspace_members` (role is the Postgres enum
-  `workspace_role`). Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
+  `refresh_tokens`, `workspaces`, `workspace_members` (role is the Postgres enum
+  `workspace_role`), `projects`, `environments` and `environment_variables`. Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
   timestamps are `timestamptz`.
 - The backend container runs `prisma migrate deploy` before starting, so a fresh
   `docker compose up` always has an up-to-date schema. The worker waits for the backend to
@@ -292,6 +293,51 @@ How it is enforced:
 workspace id is persisted in `localStorage`, and a remembered id the user can no longer access
 falls back to their first workspace. The store is cleared on sign-out, so a shared browser never
 shows one user's workspaces to the next.
+
+## Projects, environments and secrets
+
+A workspace holds up to 50 **projects**; each project holds up to 10 **environments** (created
+with Development, Staging and Production), and each environment up to 50 **variables**.
+Project and environment names are unique within their parent, compared case-insensitively.
+Owners and admins manage all of them (`projects.manage`). Every member can read them, except
+secret values, which nobody can read.
+
+**Consistency under concurrency.** Unique indexes cannot express "case-insensitive" or "at most
+N children". So creates and renames first lock the parent row (`lib/locks.ts`,
+`SELECT … FOR UPDATE` on the workspace, project or environment), then check names and limits,
+then write, all in one transaction. Two simultaneous requests cannot both pass the checks.
+
+**Access checks for nested resources.** `authorizeProject()` finds the project's workspace and
+applies the workspace permission table. Anyone outside the workspace gets "Project not found".
+Environments and variables are always looked up _through_ the authorized project
+(`WHERE id = … AND project_id = …`). An id from another project therefore returns 404, even if
+the caller can see that other project.
+
+**Base URLs** are validated when saved: http or https only, no embedded credentials, no query
+string or fragment, normalised without a trailing slash. Saving a URL is not the same as being
+allowed to call it: blocking private and internal addresses (SSRF protection) happens when a
+request is actually made, in Phase 7.
+
+**Secret variables.**
+
+- Encrypted with AES-256-GCM (`utils/secret-box.ts`) using `ENCRYPTION_KEY`, with a random IV
+  per value. The authentication tag makes tampering detectable: a modified ciphertext fails to
+  decrypt instead of producing garbage. Stored as `v1.<iv>.<tag>.<ciphertext>`; the version
+  prefix allows key rotation later.
+- **Write-only.** API responses carry `value: null` for secrets, and the frontend never
+  receives a secret's value. Editing a secret without typing a new value keeps it. Turning a
+  secret back into a plain variable requires a new value, so the old one is never revealed.
+- A database CHECK constraint (`environment_variables_value_matches_secret_flag`) requires
+  secrets to have only `encrypted_value` and plain variables only `value`. A bug elsewhere
+  therefore cannot store a secret in plaintext.
+- Changing `ENCRYPTION_KEY` makes existing secrets unreadable; keep it stable.
+- Secrets are decrypted only on the server, when the worker executes requests (Phase 7).
+
+**Frontend.** `ProjectLayout` loads the project for `/projects/:projectId/*` and shares it with
+its tabs. Opening a project that belongs to another of the user's workspaces switches to that
+workspace. Switching workspace while viewing a project returns to the new workspace's project
+list. Tabs are added only when their feature exists: Endpoints, Monitors, Analytics, Incidents
+and Dependencies join in later phases.
 
 ## Configuration
 

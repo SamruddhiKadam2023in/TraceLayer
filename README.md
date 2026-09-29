@@ -4,9 +4,10 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 3 of 20 (Workspaces) complete.** The monorepo, frontend, backend,
-> worker, database and Docker stack run end to end. Users can create an account, sign in, create
-> workspaces, switch between them, and share them with teammates under role-based permissions.
+> **Project status: Phase 4 of 20 (Projects) complete.** The monorepo, frontend, backend,
+> worker, database and Docker stack run end to end. Users can sign in, share workspaces with
+> teammates under role-based permissions, and organise their APIs into projects with
+> environments, base URLs and encrypted secret variables.
 > Product features are added phase by
 > phase following the [master specification](docs/SPEC.md). Sections below marked _(planned)_
 > describe features that do not exist yet.
@@ -34,18 +35,19 @@ monitoring and investigation tool, not a Postman clone.
 
 ## Product features
 
-| Feature                                                            | Status                    |
-| ------------------------------------------------------------------ | ------------------------- |
-| System status page (live API, database, Redis and worker health)   | ✅ Phase 1                |
-| Accounts and authentication (JWT access + rotating refresh tokens) | ✅ Phase 2                |
-| Workspaces with roles (owner, admin, member, viewer)               | ✅ Phase 3                |
-| Projects, environments and API endpoints                           | _(planned, Phases 4–5)_   |
-| Manual request builder with history                                | _(planned, Phase 6)_      |
-| Scheduled monitors (availability, status, performance, validation) | _(planned, Phase 7)_      |
-| Metrics and analytics dashboards                                   | _(planned, Phases 8–9)_   |
-| Alert rules, incidents and incident timelines                      | _(planned, Phases 10–11)_ |
-| Real-time dashboard updates                                        | _(planned, Phase 12)_     |
-| API dependency map                                                 | _(planned, Phase 13)_     |
+| Feature                                                              | Status                    |
+| -------------------------------------------------------------------- | ------------------------- |
+| System status page (live API, database, Redis and worker health)     | ✅ Phase 1                |
+| Accounts and authentication (JWT access + rotating refresh tokens)   | ✅ Phase 2                |
+| Workspaces with roles (owner, admin, member, viewer)                 | ✅ Phase 3                |
+| Projects, environments and environment variables (encrypted secrets) | ✅ Phase 4                |
+| API endpoints                                                        | _(planned, Phase 5)_      |
+| Manual request builder with history                                  | _(planned, Phase 6)_      |
+| Scheduled monitors (availability, status, performance, validation)   | _(planned, Phase 7)_      |
+| Metrics and analytics dashboards                                     | _(planned, Phases 8–9)_   |
+| Alert rules, incidents and incident timelines                        | _(planned, Phases 10–11)_ |
+| Real-time dashboard updates                                          | _(planned, Phase 12)_     |
+| API dependency map                                                   | _(planned, Phase 13)_     |
 
 ## Architecture
 
@@ -160,10 +162,14 @@ Current coverage:
   limiting. The Redis rate-limit store is tested against a real Redis.
   Workspaces: CRUD, the permission table for every role, member management, the
   "always one owner" rule, and a forced race where two owners demote each other at once.
+  Projects and environments: CRUD, authorization per role, name and limit rules, base URL
+  validation, and secrets (encrypted in the database, never returned by any endpoint, and
+  protected by a database constraint). Unit tests cover the AES-256-GCM secret encryption.
 - **Worker (Jest):** the heartbeat.
 - **Frontend (Vitest + Testing Library):** sign-in, sign-up, sign-out, route protection, session
   restore on reload, silent token renewal, the System Status page, first-workspace onboarding,
-  workspace switching, what each role sees in settings, and member and deletion flows.
+  workspace switching, what each role sees in settings, and member and deletion flows; the
+  project list, overview, environments and settings, including secret masking and editing.
 
 End-to-end tests with Playwright arrive in Phase 15, and a GitHub Actions pipeline running all of
 the above in Phase 16.
@@ -187,6 +193,7 @@ All endpoints live under `/api` and return one of two shapes:
 | POST   | `/api/auth/logout`   | Refresh cookie | End the session                                                    |
 | GET    | `/api/auth/me`       | Bearer token   | The signed-in user                                                 |
 | —      | `/api/workspaces/…`  | Bearer token   | Workspace CRUD and members (see the API reference)                 |
+| —      | `/api/projects/…`    | Bearer token   | Projects, environments and variables (see the API reference)       |
 
 Request and response details for every endpoint: [docs/api.md](docs/api.md).
 
@@ -204,6 +211,9 @@ In place so far:
 - **Rate limits** (stored in Redis, shared across API instances): 10 failed sign-ins per 15 min,
   5 registrations per hour, 60 refreshes per 15 min, per client IP; 20 new workspaces per hour
   and 30 member additions per 15 min, per user.
+- **Secret variables** are encrypted at rest with AES-256-GCM (`ENCRYPTION_KEY`) and are
+  write-only: no endpoint ever returns them, not even to owners. A database CHECK constraint
+  makes it impossible to store a secret in plaintext.
 - **Authorization** is enforced by the API on every request, from one permission table shared
   with the frontend (which only uses it to hide controls). Non-members get **404**, not 403, so
   workspace ids cannot be probed. Member changes run inside a transaction that locks the

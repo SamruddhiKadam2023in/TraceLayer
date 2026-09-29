@@ -50,12 +50,13 @@ describe('session restore and route protection', () => {
   it('restores the session from the refresh cookie and skips the sign-in page', async () => {
     installFakeApi({
       'POST /auth/refresh': [200, ok(makeSession())],
-      'GET /health': [200, ok(HEALTH)],
       'GET /workspaces': ONE_WORKSPACE,
+      'GET /projects': [200, ok([])],
     });
     renderApp('/login');
 
-    expect(await screen.findByRole('heading', { name: 'System status' })).toBeInTheDocument();
+    // Signed-in users land on the home page, the project list.
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Account menu for Ada Lovelace' }),
     ).toBeInTheDocument();
@@ -181,14 +182,14 @@ describe('create account', () => {
     installFakeApi({
       'POST /auth/refresh': UNAUTHENTICATED,
       'POST /auth/register': [201, ok(makeSession())],
-      'GET /health': [200, ok(HEALTH)],
       'GET /workspaces': ONE_WORKSPACE,
+      'GET /projects': [200, ok([])],
     });
     renderApp('/register');
 
     await fillForm();
 
-    expect(await screen.findByRole('heading', { name: 'System status' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument();
     expect(useAuthStore.getState().user?.email).toBe('ada@example.com');
   });
 });

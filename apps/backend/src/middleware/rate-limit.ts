@@ -108,6 +108,18 @@ export function createWorkspaceRateLimiters() {
   };
 }
 
+export function createProjectRateLimiters() {
+  return {
+    createProject: createLimiter({
+      name: 'project-create',
+      windowMs: 60 * MINUTE_MS,
+      limit: 30,
+      perUser: true,
+      message: 'Too many projects created. Try again later.',
+    }),
+  };
+}
+
 /** Rate limiters are built per app so each `createApp()` (and each test) starts fresh. */
 export function createAuthRateLimiters() {
   return {

@@ -67,6 +67,7 @@ carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `
 | `POST /auth/refresh`           | 60 per 15 min                     |
 | `POST /workspaces`             | 20 per hour, per user             |
 | `POST /workspaces/:id/members` | 30 per 15 min, per user           |
+| `POST /projects`               | 30 per hour, per user             |
 
 ## Health
 
@@ -244,3 +245,100 @@ Rules for add, change role and remove:
 - The last owner cannot be demoted, removed or leave: `409 CONFLICT` ("A workspace must always
   have at least one owner"). Promote another member to owner first, or delete the workspace.
 - A `:userId` that is not a member of the workspace returns `404` ("Member not found").
+
+## Projects
+
+All project endpoints require `Authorization: Bearer <access token>`. Access follows the
+project's workspace: every member can read, owners and admins (`projects.manage`) can change.
+Anyone outside the workspace, and any malformed id, gets `404 NOT_FOUND` ("Project not
+found").
+
+A **project**:
+
+```json
+{
+  "id": "3f1c…",
+  "workspaceId": "25dd…",
+  "name": "Payments API",
+  "description": "Card processing",
+  "createdBy": { "id": "ae2e…", "name": "Ada Lovelace" },
+  "environmentCount": 3,
+  "createdAt": "2026-09-29T13:30:18.696Z",
+  "updatedAt": "2026-09-29T13:30:18.696Z"
+}
+```
+
+`createdBy` is `null` if the creator's account no longer exists.
+
+| Method | Path                          | Required role  | Result                                   |
+| ------ | ----------------------------- | -------------- | ---------------------------------------- |
+| GET    | `/api/projects?workspaceId=…` | any member     | `200`, the workspace's projects by name  |
+| POST   | `/api/projects`               | owner or admin | `201`, the project, with 3 environments  |
+| GET    | `/api/projects/:id`           | any member     | `200`, the project                       |
+| PATCH  | `/api/projects/:id`           | owner or admin | `200`, the updated project               |
+| DELETE | `/api/projects/:id`           | owner or admin | `204`; environments and variables go too |
+
+- **Create** takes `{ "workspaceId": uuid, "name": string, "description"?: string }`.
+- **Update** takes `{ "name"?: string, "description"?: string }`, with at least one field.
+- `name`: 1–100 characters after trimming, unique within the workspace ignoring case
+  (`409 CONFLICT` with `details: [{ "path": "name", … }]`).
+- `description`: up to 500 characters; an empty string clears it.
+- A workspace can hold at most **50** projects (`409 CONFLICT`).
+- New projects get the environments **Development**, **Staging** and **Production**, with no
+  base URL set.
+
+### Environments
+
+An **environment**, with its variables:
+
+```json
+{
+  "id": "9a0e…",
+  "projectId": "3f1c…",
+  "name": "Production",
+  "baseUrl": "https://api.example.com",
+  "variables": [
+    { "id": "…", "key": "API_KEY", "isSecret": true, "value": null, "updatedAt": "…" },
+    { "id": "…", "key": "CLIENT_ID", "isSecret": false, "value": "web-app", "updatedAt": "…" }
+  ],
+  "createdAt": "…",
+  "updatedAt": "…"
+}
+```
+
+| Method | Path                                            | Required role  | Result                         |
+| ------ | ----------------------------------------------- | -------------- | ------------------------------ |
+| GET    | `/api/projects/:id/environments`                | any member     | `200`, environments in order   |
+| POST   | `/api/projects/:id/environments`                | owner or admin | `201`, the new environment     |
+| PATCH  | `/api/projects/:id/environments/:environmentId` | owner or admin | `200`, the updated environment |
+| DELETE | `/api/projects/:id/environments/:environmentId` | owner or admin | `204`                          |
+
+- **Create** takes `{ "name": string, "baseUrl"?: string }`; **update** takes either field.
+- `name`: 1–50 characters, unique within the project ignoring case (`409`).
+- `baseUrl`: an `http` or `https` URL, at most 2048 characters. It may not contain
+  credentials, a query string or a fragment (`400`). It is stored lower-cased without a
+  trailing slash, and an empty string clears it.
+- A project holds at most **10** environments, and deleting the **last** one is refused (`409`).
+- An `:environmentId` that belongs to a different project returns `404`.
+
+### Variables
+
+| Method | Path                                                                  | Required role  | Result              |
+| ------ | --------------------------------------------------------------------- | -------------- | ------------------- |
+| POST   | `/api/projects/:id/environments/:environmentId/variables`             | owner or admin | `201`, the variable |
+| PATCH  | `/api/projects/:id/environments/:environmentId/variables/:variableId` | owner or admin | `200`, the variable |
+| DELETE | `/api/projects/:id/environments/:environmentId/variables/:variableId` | owner or admin | `204`               |
+
+- **Create** takes `{ "key": string, "value": string, "isSecret"?: boolean }`.
+  - `key`: letters, digits and underscores, not starting with a digit, at most 100
+    characters, and unique within the environment (`409`).
+  - `value`: at most 4096 characters.
+  - An environment holds at most **50** variables.
+- **Update** takes `{ "key"?, "value"?, "isSecret"? }`, at least one field.
+  - Omitting `value` keeps the stored value.
+  - Making a plain variable secret encrypts its current value.
+  - Making a secret plain **requires** a new `value` (`400`, path `value`), because a secret's
+    value is never revealed.
+
+**Secrets are write-only.** For `isSecret: true` every response carries `value: null`. The
+value is stored encrypted (AES-256-GCM) and is only ever decrypted on the server.

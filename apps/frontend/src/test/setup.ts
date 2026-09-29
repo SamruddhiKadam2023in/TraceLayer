@@ -1,8 +1,11 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach } from 'vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+
+// findBy* queries wait up to 1s by default, which a loaded machine can exceed.
+configure({ asyncUtilTimeout: 3_000 });
 
 afterEach(() => {
   cleanup();

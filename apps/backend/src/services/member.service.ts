@@ -9,6 +9,7 @@ import {
 } from '@tracelayer/shared';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../utils/errors';
+import { compareNames } from '../utils/sort';
 
 interface LockedMember {
   user_id: string;
@@ -72,7 +73,7 @@ export async function listMembers(workspaceId: string): Promise<WorkspaceMemberV
       role: m.role,
       joinedAt: m.createdAt.toISOString(),
     }))
-    .sort((a, b) => ROLE_RANK[a.role] - ROLE_RANK[b.role] || a.name.localeCompare(b.name));
+    .sort((a, b) => ROLE_RANK[a.role] - ROLE_RANK[b.role] || compareNames(a.name, b.name));
 }
 
 /** Adds an existing TraceLayer user to the workspace. */
