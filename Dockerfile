@@ -24,10 +24,11 @@ COPY apps/worker/package.json apps/worker/
 COPY apps/frontend/package.json apps/frontend/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
+COPY packages/executor/package.json packages/executor/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# ── Server-side build: shared → db (prisma generate) → backend, worker
+# ── Server-side build: shared → db (prisma generate) → executor → backend, worker
 FROM deps AS server-build
 COPY tsconfig.base.json tsconfig.node.json ./
 COPY packages ./packages
@@ -35,6 +36,7 @@ COPY apps/backend ./apps/backend
 COPY apps/worker ./apps/worker
 RUN pnpm --filter @tracelayer/shared build \
   && pnpm --filter @tracelayer/db build \
+  && pnpm --filter @tracelayer/executor build \
   && pnpm --filter @tracelayer/backend build \
   && pnpm --filter @tracelayer/worker build
 

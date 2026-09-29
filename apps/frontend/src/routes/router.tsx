@@ -13,6 +13,7 @@ import { ProjectOverviewPage } from '@/pages/project/ProjectOverviewPage';
 import { ProjectEnvironmentsPage } from '@/pages/project/ProjectEnvironmentsPage';
 import { ProjectSettingsPage } from '@/pages/project/ProjectSettingsPage';
 import { ProjectEndpointsPage } from '@/pages/project/ProjectEndpointsPage';
+import { ProjectHistoryPage } from '@/pages/project/ProjectHistoryPage';
 import { EndpointCreatePage, EndpointDetailPage } from '@/pages/project/EndpointEditorPages';
 import { RedirectIfAuthenticated, RequireAuth, RequireWorkspace } from './guards';
 
@@ -52,6 +53,7 @@ export const routes: RouteObject[] = [
                       { path: 'endpoints', element: <ProjectEndpointsPage /> },
                       { path: 'endpoints/new', element: <EndpointCreatePage /> },
                       { path: 'endpoints/:endpointId', element: <EndpointDetailPage /> },
+                      { path: 'history', element: <ProjectHistoryPage /> },
                       { path: 'environments', element: <ProjectEnvironmentsPage /> },
                       { path: 'settings', element: <ProjectSettingsPage /> },
                     ],

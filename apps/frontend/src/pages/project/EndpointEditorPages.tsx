@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ChevronLeft, SearchX, Trash2 } from 'lucide-react';
-import { hasPermission } from '@tracelayer/shared';
+import { hasPermission, type EndpointRequest, type ExecutionResult } from '@tracelayer/shared';
+import { ResponseViewer } from '@/components/requests/ResponseViewer';
+import { executeRequest } from '@/services/request.service';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { EmptyState, LoadError } from '@/components/EmptyState';
@@ -37,10 +39,40 @@ function useEnvironments(projectId: string) {
   return useQuery(`environments:${projectId}`, () => fetchEnvironments(projectId));
 }
 
+/** Sends requests from the editor and keeps the latest result to show below it. */
+function useRequestRunner(projectId: string, endpointId: string | null) {
+  const [result, setResult] = useState<ExecutionResult | null>(null);
+  const send = async (request: EndpointRequest, environmentId: string | null) => {
+    const { result: next } = await executeRequest({
+      projectId,
+      environmentId,
+      endpointId,
+      request,
+    });
+    setResult(next);
+  };
+  return { result, send };
+}
+
+function ResponsePanel({ result }: { result: ExecutionResult | null }) {
+  return (
+    <div className="mt-6">
+      {result ? (
+        <ResponseViewer result={result} />
+      ) : (
+        <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-fg-subtle">
+          Send the request to see the response here.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function EndpointCreatePage() {
   const { project } = useProject();
   const navigate = useNavigate();
   const { data: environments, error, reload } = useEnvironments(project.id);
+  const runner = useRequestRunner(project.id, null);
 
   if (error && !environments) return <LoadError message={error.message} onRetry={reload} />;
   if (!environments) return null;
@@ -61,7 +93,9 @@ export function EndpointCreatePage() {
           const created = await createEndpoint(project.id, config);
           navigate(`../${created.id}`, { relative: 'path', replace: true });
         }}
+        onSend={runner.send}
       />
+      <ResponsePanel result={runner.result} />
     </div>
   );
 }
@@ -77,6 +111,7 @@ export function EndpointDetailPage() {
 
   const endpoint = useQuery(`endpoint:${endpointId}`, () => fetchEndpoint(endpointId));
   const environments = useEnvironments(project.id);
+  const runner = useRequestRunner(project.id, endpointId);
   const error = endpoint.error ?? environments.error;
 
   if (endpoint.error?.code === 'NOT_FOUND') {
@@ -147,7 +182,10 @@ export function EndpointDetailPage() {
             Delete endpoint
           </Button>
         }
+        // Running a request uses the environment's secrets: not for read-only viewers.
+        onSend={canManage ? runner.send : undefined}
       />
+      {canManage && <ResponsePanel result={runner.result} />}
 
       {deleting && (
         <ConfirmDialog

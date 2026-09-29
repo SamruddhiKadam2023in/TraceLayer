@@ -132,6 +132,19 @@ export function createEndpointRateLimiters() {
   };
 }
 
+export function createRequestRateLimiters() {
+  return {
+    // Each execution makes an outbound request, so this also caps use of the platform as a proxy.
+    execute: createLimiter({
+      name: 'request-execute',
+      windowMs: MINUTE_MS,
+      limit: 60,
+      perUser: true,
+      message: 'Too many requests sent. Wait a minute and try again.',
+    }),
+  };
+}
+
 /** Rate limiters are built per app so each `createApp()` (and each test) starts fresh. */
 export function createAuthRateLimiters() {
   return {

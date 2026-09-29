@@ -36,6 +36,14 @@ const envSchema = z.object({
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
   /** Mark auth cookies Secure. Defaults to true in production; the local Docker stack serves plain HTTP. */
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
+  /**
+   * Let executed requests reach private, loopback and link-local addresses (SSRF protection
+   * off). Only for local development against APIs on your own machine. Never in production.
+   */
+  ALLOW_PRIVATE_NETWORK_TARGETS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   ENCRYPTION_KEY: z
     .string()
     .refine(

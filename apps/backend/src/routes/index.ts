@@ -4,6 +4,7 @@ import { createAuthRouter } from './auth.routes';
 import { createWorkspaceRouter } from './workspace.routes';
 import { createProjectRouter } from './project.routes';
 import { createEndpointRouter } from './endpoint.routes';
+import { createRequestRouter } from './request.routes';
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -12,5 +13,6 @@ export function createApiRouter(): Router {
   router.use('/workspaces', createWorkspaceRouter());
   router.use('/projects', createProjectRouter());
   router.use('/endpoints', createEndpointRouter());
+  router.use('/requests', createRequestRouter());
   return router;
 }

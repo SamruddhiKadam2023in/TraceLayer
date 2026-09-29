@@ -64,6 +64,8 @@ services:
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
       # The local stack is served over plain http, where browsers drop Secure cookies.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # SSRF protection: executed requests may not reach private or internal addresses.
+      ALLOW_PRIVATE_NETWORK_TARGETS: ${ALLOW_PRIVATE_NETWORK_TARGETS:-false}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE=}
     ports:
       - '${BACKEND_PORT:-4000}:4000'

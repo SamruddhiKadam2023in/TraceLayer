@@ -12,3 +12,6 @@ process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret-that-is-long-enough-00';
 process.env.ENCRYPTION_KEY ??= 'ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE=';
 // Minimum bcrypt cost keeps the suite fast; production uses 12.
 process.env.BCRYPT_ROUNDS = '4';
+// Request tests call throwaway servers on 127.0.0.1. SSRF blocking itself is covered by the
+// executor's own tests, which run with protection on.
+process.env.ALLOW_PRIVATE_NETWORK_TARGETS = 'true';

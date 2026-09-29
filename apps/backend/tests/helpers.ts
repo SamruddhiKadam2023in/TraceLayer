@@ -6,7 +6,7 @@ import { prisma } from '../src/lib/prisma';
 /** Empties every table touched by the tests. `CASCADE` follows foreign keys. */
 export async function resetDatabase(): Promise<void> {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE users, refresh_tokens, workspaces, workspace_members, projects, environments, environment_variables, endpoints CASCADE',
+    'TRUNCATE TABLE users, refresh_tokens, workspaces, workspace_members, projects, environments, environment_variables, endpoints, request_history CASCADE',
   );
 }
 

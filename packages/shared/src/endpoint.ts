@@ -235,6 +235,20 @@ export const endpointConfigSchema = z
 export type EndpointConfig = z.output<typeof endpointConfigSchema>;
 export type EndpointConfigInput = z.input<typeof endpointConfigSchema>;
 
+/** Just what is needed to send a request (no name, tags or metadata). */
+export const endpointRequestSchema = z
+  .object({
+    method: endpointFields.method,
+    url: endpointFields.url,
+    headers: endpointFields.headers,
+    queryParams: endpointFields.queryParams,
+    body: endpointFields.body,
+    auth: endpointFields.auth,
+    timeoutMs: endpointFields.timeoutMs,
+  })
+  .superRefine(rejectBodyOnBodylessMethod);
+export type EndpointRequest = z.output<typeof endpointRequestSchema>;
+
 /** Create: sensible defaults for everything except name, method and URL. */
 export const createEndpointSchema = z
   .object({

@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import { Controller, useForm, useWatch, type FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertTriangle, Info } from 'lucide-react';
+import { AlertTriangle, Info, Send } from 'lucide-react';
 import {
   BODYLESS_METHODS,
   endpointConfigSchema,
+  endpointRequestSchema,
   endpointVariableNames,
   HTTP_METHODS,
   type EndpointAuth,
@@ -12,6 +13,7 @@ import {
   type EndpointBody,
   type EndpointBodyType,
   type EndpointConfig,
+  type EndpointRequest,
   type EndpointVariableSource,
   type EnvironmentView,
 } from '@tracelayer/shared';
@@ -53,7 +55,22 @@ interface EndpointFormProps {
   onSubmit: (config: EndpointConfig) => Promise<void>;
   /** Extra controls in the footer, e.g. a delete button. */
   footer?: ReactNode;
+  /**
+   * Sends the request as currently shown in the form (including unsaved edits). Omitted for
+   * users who cannot run requests.
+   */
+  onSend?: (request: EndpointRequest, environmentId: string | null) => Promise<void>;
 }
+
+const REQUEST_FIELDS = [
+  'method',
+  'url',
+  'headers',
+  'queryParams',
+  'body',
+  'auth',
+  'timeoutMs',
+] as const;
 
 function joinUrl(baseUrl: string, path: string): string {
   return path.startsWith('/') ? `${baseUrl}${path}` : path;
@@ -66,36 +83,70 @@ export function EndpointForm({
   submitLabel,
   onSubmit,
   footer,
+  onSend,
 }: EndpointFormProps) {
   const [tab, setTab] = useState<TabId>('params');
+  const [runEnvironmentId, setRunEnvironmentId] = useState<string | null>(
+    initialValues.environmentId ?? null,
+  );
+  const [sending, setSending] = useState(false);
   const {
     register,
     control,
     handleSubmit,
     setError,
     setValue,
+    getValues,
+    trigger,
+    clearErrors,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues, unknown, EndpointConfig>({
     resolver: zodResolver(endpointConfigSchema),
     defaultValues: initialValues,
   });
 
+  const applyServerErrors = (err: unknown) => {
+    const apiError = toApiError(err);
+    const fields = Object.entries(fieldErrors(apiError));
+    for (const [path, message] of fields) {
+      setError(path as FieldPath<FormValues>, { message });
+    }
+    if (fields.length === 0) setError('root', { message: apiError.message });
+  };
+
+  /** Validates only the request part: a request can be sent before the endpoint is named. */
+  const send = async () => {
+    if (!onSend) return;
+    clearErrors('root');
+    const parsed = endpointRequestSchema.safeParse(getValues());
+    if (!parsed.success) {
+      await trigger([...REQUEST_FIELDS]);
+      return;
+    }
+    setSending(true);
+    try {
+      await onSend(parsed.data, runEnvironmentId);
+    } catch (err) {
+      applyServerErrors(err);
+    } finally {
+      setSending(false);
+    }
+  };
+
   const values = useWatch({ control });
   const method = values.method ?? 'GET';
   const body = values.body ?? { type: 'none' };
   const auth = values.auth ?? { type: 'none' };
-  const environment = environments.find((e) => e.id === values.environmentId);
+  // With a Send button, previews and variable checks follow the environment it will run in.
+  const environment = environments.find(
+    (e) => e.id === (onSend ? runEnvironmentId : values.environmentId),
+  );
 
   const submit = handleSubmit(async (config) => {
     try {
       await onSubmit(config);
     } catch (err) {
-      const apiError = toApiError(err);
-      const fields = Object.entries(fieldErrors(apiError));
-      for (const [path, message] of fields) {
-        setError(path as FieldPath<FormValues>, { message });
-      }
-      if (fields.length === 0) setError('root', { message: apiError.message });
+      applyServerErrors(err);
     }
   });
 
@@ -177,6 +228,31 @@ export function EndpointForm({
                 {...register('url')}
               />
             </div>
+            {onSend && (
+              <>
+                <div className="w-36 shrink-0">
+                  <SelectField
+                    label="Run in environment"
+                    hideLabel
+                    className="w-full"
+                    value={runEnvironmentId ?? ''}
+                    onChange={(e) => setRunEnvironmentId(e.target.value || null)}
+                    options={[
+                      { value: '', label: 'No environment' },
+                      ...environments.map((e) => ({ value: e.id, label: e.name })),
+                    ]}
+                  />
+                </div>
+                <Button
+                  onClick={() => void send()}
+                  loading={sending}
+                  className="shrink-0 self-start"
+                >
+                  <Send className="size-4" aria-hidden="true" />
+                  Send
+                </Button>
+              </>
+            )}
           </div>
           {environment?.baseUrl && values.url?.startsWith('/') && (
             <p className="truncate font-mono text-xs text-fg-subtle">
@@ -430,7 +506,9 @@ export function EndpointForm({
             </p>
             {!environment ? (
               <p className="mt-1 text-fg-subtle">
-                Choose a default environment in Settings to check they are defined.
+                {onSend
+                  ? 'Choose an environment to run in to check they are defined.'
+                  : 'Choose a default environment in Settings to check they are defined.'}
               </p>
             ) : missing.length > 0 ? (
               <p className="mt-1 flex items-center gap-1 text-warn">

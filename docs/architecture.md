@@ -4,7 +4,8 @@ TraceLayer is a pnpm monorepo with three runnable apps (frontend, backend, worke
 packages (database client, shared types). PostgreSQL is the system of record; Redis carries the job
 queue, the worker heartbeat, rate-limit counters and, later, real-time fan-out.
 
-> **Status:** this document covers Phases 1–5 (foundation, authentication, workspaces, projects, endpoints). Sections marked _(planned)_ describe
+> **Status:** this document covers Phases 1–6 (foundation, authentication, workspaces, projects, endpoints, request
+> execution). Sections marked _(planned)_ describe
 > the target design from [SPEC.md](SPEC.md) and are filled in by the phase noted.
 
 ## System diagram
@@ -82,7 +83,7 @@ docker-compose.yml
 - Signed-in routes also sit behind `RequireWorkspace`, which loads the user's workspaces and
   guarantees a current one. Users with none see the "create your first workspace" screen.
 - Screens so far: sign-in, sign-up, first-workspace onboarding, **Projects** (list and create),
-  a **project page** with Overview, Endpoints, Environments and Settings tabs, the **endpoint
+  a **project page** with Overview, Endpoints, History, Environments and Settings tabs, the **endpoint
   editor**, **System Status** (the live
   `/api/health` report) and **Workspace settings** (rename, members, leave, delete). The top
   bar holds the workspace switcher. Sidebar entries are added as each feature is built, so there
@@ -169,8 +170,8 @@ Both shapes are defined once in `@tracelayer/shared` and used by the backend and
   client, published inside the monorepo as `@tracelayer/db` and shared by the backend and worker.
 - Models are added phase by phase, each with its own migration. Current tables: `users`,
   `refresh_tokens`, `workspaces`, `workspace_members` (role is the Postgres enum
-  `workspace_role`), `projects`, `environments`, `environment_variables` and `endpoints` (method
-  is the enum `http_method`). Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
+  `workspace_role`), `projects`, `environments`, `environment_variables`, `endpoints` (method
+  is the enum `http_method`) and `request_history`. Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
   timestamps are `timestamptz`.
 - The backend container runs `prisma migrate deploy` before starting, so a fresh
   `docker compose up` always has an up-to-date schema. The worker waits for the backend to
@@ -383,6 +384,88 @@ and Settings. Tabs follow the WAI-ARIA pattern: arrow keys switch between them, 
 containing errors is marked. A panel lists the variables the request uses and warns about any
 missing from the default environment. It works on unfinished input too. For viewers the whole
 form is a disabled `fieldset`.
+
+## Request execution and SSRF protection
+
+The platform sends HTTP requests to URLs that users choose, which makes **server-side request
+forgery (SSRF)** its biggest security risk: without protection, anyone who can edit an endpoint
+could make the server fetch `http://169.254.169.254/` (cloud credentials), `http://postgres:5432`
+or anything else on the internal network.
+
+All execution goes through `@tracelayer/executor` (`packages/executor`). The API uses it for
+manual requests now, and the worker will use the same code for scheduled monitors (Phase 7).
+
+```text
+endpoint config + environment ──▶ prepareRequest ──▶ executeRequest ──▶ ExecutionResult
+   ({{VARS}}, relative URL)        substitute vars     SSRF-checked        secrets masked
+                                   build auth/body     HTTP via undici     errors classified
+                                   secret-origin rule  limits, redirects
+```
+
+**1. Preparation** (`prepare.ts`)
+
+- Substitutes `{{VARIABLES}}` from the chosen environment. Secrets are decrypted only here, on
+  the server. Every missing variable is reported at once (`400`), and nothing is sent.
+- Relative paths are joined to the environment's base URL. Query parameters, bearer, basic or
+  API-key auth, bodies and default headers (`Content-Type`, `User-Agent`) are added.
+- Header values containing line breaks are refused, which prevents header injection through a
+  variable.
+- **Secret-origin rule.** A request that uses any secret variable may only go to the
+  environment's base-URL origin (scheme, host and port). Only owners and admins can change base
+  URLs, so a member cannot send `{{API_TOKEN}}` to a server they control, and a secret cannot be
+  downgraded to plain `http`.
+
+**2. SSRF protection** (`ssrf.ts`)
+
+- Only `http` and `https` are allowed.
+- `localhost`, `*.localhost`, `*.local`, `*.internal`, `metadata.google.internal` and hostnames
+  without a dot (Docker service names such as `postgres`) are refused.
+- Every address is checked against private, loopback, link-local (including `169.254.169.254`),
+  CGNAT, documentation, multicast and reserved ranges, for IPv4 and IPv6. IPv4-mapped
+  (`::ffff:127.0.0.1`) and NAT64 addresses are unwrapped first. URL tricks such as
+  `http://0x7f.1/` or `http://2130706433/` normalise to `127.0.0.1` and are caught.
+- **The check happens at connection time.** The HTTP client's socket uses a custom DNS lookup
+  that rejects the connection if _any_ resolved address is internal. The address that is
+  validated is the one that is dialled, so DNS rebinding (a public answer at check time, a private
+  one at connect time) cannot bypass it. IP literals skip DNS and are checked before connecting.
+- **Redirects** are followed manually, at most 5, and each hop is checked again:
+  - Credentials (`Authorization`, `Cookie`, the API-key header) are dropped on a cross-origin
+    hop, as browsers do.
+  - A request that uses secrets does not follow a cross-origin redirect at all.
+  - 303 (and 301/302 after a POST) switch to GET without a body.
+- `ALLOW_PRIVATE_NETWORK_TARGETS=true` turns the address checks off, for local development
+  against APIs on your own machine only. It defaults to `false`, including in Docker Compose.
+
+**3. Limits and results** (`execute.ts`)
+
+- One deadline (the endpoint's `timeoutMs`, at most 30 s) covers all redirects and reading the
+  body.
+- Response bodies are decompressed (gzip, deflate, br) and capped at **1 MB of decoded
+  bytes**, which also defuses compression bombs. Binary bodies are measured but not returned.
+- **Masking.** Secret values are masked (`••••••`) in everything returned: the sent URL and
+  headers, response headers and body (an API might echo a token back), and error messages. The
+  raw, URL-encoded, form-encoded and Basic-auth base64 forms are all masked.
+- Network outcomes are _results_, not API errors: `BLOCKED_TARGET`, `TIMEOUT`, `DNS_FAILURE`,
+  `CONNECTION_REFUSED`, `CONNECTION_RESET`, `TLS_ERROR`, `INVALID_RESPONSE`, `REQUEST_FAILED`.
+  They are shown to the user and stored in history like any response.
+
+**Permissions.** Running a request needs `monitoring.manage` (owner, admin or member). Viewers
+cannot run requests, because doing so uses the environment's secrets. History is readable by
+every member.
+
+**History.** Each run is stored in `request_history`: method, final URL with secrets masked,
+status or error code, duration, size, endpoint, environment and user. Bodies are never stored.
+The newest 5,000 entries per project are kept. The list supports filters (method, status class,
+endpoint, environment, date range, URL search), sorting (time, duration, status) with stable
+tie-breakers, and pagination.
+
+**Frontend.** The endpoint editor doubles as the request builder: **Send** runs the form as it is
+now, including unsaved edits, in the environment chosen next to it. The response viewer shows
+status, time, size and timestamp, a pretty-printed, syntax-highlighted JSON body (with a raw
+view and copy), response headers, and the request as actually sent (secrets masked). The JSON
+viewer is a small built-in tokenizer rather than Monaco, which would add several megabytes for
+read-only display. The History tab keeps its filters in the URL, so a filtered view can be
+shared.
 
 ## Configuration
 

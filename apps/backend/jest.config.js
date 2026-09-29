@@ -9,6 +9,7 @@ module.exports = {
   moduleNameMapper: {
     '^@tracelayer/shared$': '<rootDir>/../../packages/shared/src/index.ts',
     '^@tracelayer/db$': '<rootDir>/../../packages/db/src/index.ts',
+    '^@tracelayer/executor$': '<rootDir>/../../packages/executor/src/index.ts',
   },
   globalSetup: '<rootDir>/tests/global-setup.ts',
   setupFiles: ['<rootDir>/tests/setup-env.ts'],

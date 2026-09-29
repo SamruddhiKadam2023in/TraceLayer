@@ -69,6 +69,7 @@ carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `
 | `POST /workspaces/:id/members` | 30 per 15 min, per user           |
 | `POST /projects`               | 30 per hour, per user             |
 | `POST /endpoints`              | 100 per hour, per user            |
+| `POST /requests/execute`       | 60 per minute, per user           |
 
 ## Health
 
@@ -409,3 +410,114 @@ subset of the fields. It is merged into the stored endpoint, and the whole resul
 - **Credentials must be references:** `auth.token`, `auth.password` and `auth.value` must be
   exactly one `{{NAME}}`, and credential headers (`Authorization`, `Cookie`, `X-Api-Key`, …) must
   contain one. Otherwise the request is rejected with `400` on that field.
+
+## Requests
+
+### `POST /api/requests/execute`
+
+Sends a request through the platform, with SSRF protection. Requires owner, admin or member
+(`monitoring.manage`) in the project's workspace. Viewers get `403`, because running a request
+uses the environment's secrets. Rate limit: 60 per minute per user.
+
+```json
+{
+  "projectId": "3f1c…",
+  "environmentId": "9a0e…",
+  "endpointId": "5b0d…",
+  "request": {
+    "method": "GET",
+    "url": "/orders/{{ORDER_ID}}",
+    "headers": [],
+    "queryParams": [],
+    "body": { "type": "none" },
+    "auth": { "type": "bearer", "token": "{{API_TOKEN}}" },
+    "timeoutMs": 10000
+  },
+  "saveToHistory": true
+}
+```
+
+- `environmentId` may be `null`; then only absolute URLs without variables can run.
+- `endpointId` is optional (default `null`) and links the run to a saved endpoint in history.
+- `request` follows the endpoint rules; see [Endpoints](#endpoints).
+- `saveToHistory` defaults to `true`.
+
+**Configuration problems** return `400 VALIDATION_ERROR`, and nothing is sent:
+
+- a variable is not defined in the environment;
+- a relative URL is used without a base URL;
+- a header value would contain a line break;
+- a secret would be sent anywhere other than the environment's base-URL origin
+  (`details: [{ "path": "url", … }]`).
+
+An environment or endpoint from another project returns `404`.
+
+**Otherwise `200`**, even if the request itself failed:
+
+```json
+{
+  "result": {
+    "startedAt": "2026-09-29T14:02:11.120Z",
+    "durationMs": 243,
+    "timeToFirstByteMs": 201,
+    "request": {
+      "method": "GET",
+      "url": "https://api.example.com/orders/42",
+      "headers": [
+        ["Authorization", "Bearer ••••••"],
+        ["User-Agent", "TraceLayer/0.1 (…)"]
+      ]
+    },
+    "redirects": [],
+    "note": null,
+    "response": {
+      "status": 200,
+      "statusText": "",
+      "headers": [["content-type", "application/json"]],
+      "contentType": "application/json",
+      "body": "{\"id\":42}",
+      "bodyKind": "text",
+      "sizeBytes": 9,
+      "truncated": false
+    },
+    "error": null
+  },
+  "historyId": "c81e…"
+}
+```
+
+- When no response arrived, `response` is `null` and `error` is
+  `{ "code", "message" }`. The codes are `BLOCKED_TARGET`, `TIMEOUT`, `DNS_FAILURE`,
+  `CONNECTION_REFUSED`, `CONNECTION_RESET`, `TLS_ERROR`, `INVALID_RESPONSE` and `REQUEST_FAILED`.
+- Bodies are capped at 1 MB after decompression (`truncated: true`).
+- Binary bodies have `bodyKind: "binary"` and `body: null`.
+- **Secret values are masked** (`••••••`) everywhere in the result.
+- `note` explains a redirect that was deliberately not followed.
+
+### `GET /api/requests/history`
+
+Readable by every workspace member.
+
+| Query parameter        | Meaning                                                               |
+| ---------------------- | --------------------------------------------------------------------- |
+| `projectId` (required) | The project                                                           |
+| `endpointId`           | Only runs of this endpoint                                            |
+| `environmentId`        | Only runs in this environment                                         |
+| `method`               | HTTP method                                                           |
+| `status`               | `2xx`, `3xx`, `4xx`, `5xx`, or `error` (no response)                  |
+| `from`, `to`           | ISO 8601 date-times (inclusive); `to` must not be before `from`       |
+| `search`               | Case-insensitive match on the URL                                     |
+| `sort`                 | `createdAt` (default), `durationMs` or `status`                       |
+| `order`                | `desc` (default) or `asc`; failed runs sort first ascending by status |
+| `page`, `pageSize`     | Default 1 and 25; `pageSize` at most 100                              |
+
+The response is:
+
+```json
+{ "items": [HistoryEntry], "total": 60, "page": 2, "pageSize": 25 }
+```
+
+Each entry has `id`, `method`, `url` (secrets masked), `status` (or `null` with `errorCode` and
+`errorMessage`), `durationMs`, `sizeBytes`, `createdAt`, and `endpoint`, `environment` and
+`user` (each `{ id, name }` or `null`). Response bodies are never stored. The newest 5,000 entries
+per project are kept.

@@ -4,10 +4,11 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 5 of 20 (API endpoints) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 6 of 20 (Request builder) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
-> and encrypted secret variables, and save API endpoints with their full request configuration.
+> and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
+> SSRF-protected request builder with a response viewer and searchable request history.
 > Product features are added phase by
 > phase following the [master specification](docs/SPEC.md). Sections below marked _(planned)_
 > describe features that do not exist yet.
@@ -35,19 +36,19 @@ monitoring and investigation tool, not a Postman clone.
 
 ## Product features
 
-| Feature                                                                | Status                    |
-| ---------------------------------------------------------------------- | ------------------------- |
-| System status page (live API, database, Redis and worker health)       | ✅ Phase 1                |
-| Accounts and authentication (JWT access + rotating refresh tokens)     | ✅ Phase 2                |
-| Workspaces with roles (owner, admin, member, viewer)                   | ✅ Phase 3                |
-| Projects, environments and environment variables (encrypted secrets)   | ✅ Phase 4                |
-| API endpoints: method, URL, headers, params, body, auth, timeout, tags | ✅ Phase 5                |
-| Manual request builder with history                                    | _(planned, Phase 6)_      |
-| Scheduled monitors (availability, status, performance, validation)     | _(planned, Phase 7)_      |
-| Metrics and analytics dashboards                                       | _(planned, Phases 8–9)_   |
-| Alert rules, incidents and incident timelines                          | _(planned, Phases 10–11)_ |
-| Real-time dashboard updates                                            | _(planned, Phase 12)_     |
-| API dependency map                                                     | _(planned, Phase 13)_     |
+| Feature                                                                  | Status                    |
+| ------------------------------------------------------------------------ | ------------------------- |
+| System status page (live API, database, Redis and worker health)         | ✅ Phase 1                |
+| Accounts and authentication (JWT access + rotating refresh tokens)       | ✅ Phase 2                |
+| Workspaces with roles (owner, admin, member, viewer)                     | ✅ Phase 3                |
+| Projects, environments and environment variables (encrypted secrets)     | ✅ Phase 4                |
+| API endpoints: method, URL, headers, params, body, auth, timeout, tags   | ✅ Phase 5                |
+| Request builder with response viewer and request history, SSRF-protected | ✅ Phase 6                |
+| Scheduled monitors (availability, status, performance, validation)       | _(planned, Phase 7)_      |
+| Metrics and analytics dashboards                                         | _(planned, Phases 8–9)_   |
+| Alert rules, incidents and incident timelines                            | _(planned, Phases 10–11)_ |
+| Real-time dashboard updates                                              | _(planned, Phase 12)_     |
+| API dependency map                                                       | _(planned, Phase 13)_     |
 
 ## Architecture
 
@@ -167,14 +168,20 @@ Current coverage:
   protected by a database constraint). Unit tests cover the AES-256-GCM secret encryption.
   Endpoints: CRUD, filters, per-role access, and every configuration rule (credential
   references, URL forms, JSON with variables, no body on GET/HEAD, validation of the merged
-  result on partial updates).
+  result on partial updates). Request execution: variables and secrets resolved server side,
+  the secret-origin rule, masking, history filters, sorting and pagination.
+- **Executor (Jest):** SSRF address and hostname rules (including IPv4-mapped IPv6, NAT64 and
+  hex/decimal IPv4 tricks), request preparation, and real HTTP execution against local servers:
+  timeouts, gzip, size caps, binary bodies, redirects and credential handling.
 - **Worker (Jest):** the heartbeat.
 - **Frontend (Vitest + Testing Library):** sign-in, sign-up, sign-out, route protection, session
   restore on reload, silent token renewal, the System Status page, first-workspace onboarding,
   workspace switching, what each role sees in settings, and member and deletion flows; the
   project list, overview, environments and settings, including secret masking and editing; the
   endpoint list and filters, the endpoint editor (tabs, validation, variable warnings, keyboard
-  navigation) and read-only access for viewers.
+  navigation) and read-only access for viewers; sending requests, the response viewer (pretty and
+  raw JSON, headers, the sent request), error states, and the history table with URL-backed
+  filters, sorting and paging.
 
 End-to-end tests with Playwright arrive in Phase 15, and a GitHub Actions pipeline running all of
 the above in Phase 16.
@@ -188,18 +195,20 @@ All endpoints live under `/api` and return one of two shapes:
 { "success": false, "error": { "code": "NOT_FOUND", "message": "…", "requestId": "…" } }
 ```
 
-| Method | Path                 | Auth           | Description                                                        |
-| ------ | -------------------- | -------------- | ------------------------------------------------------------------ |
-| GET    | `/api/health/live`   | —              | Liveness check                                                     |
-| GET    | `/api/health`        | —              | Database, Redis and worker status; **503** if a data store is down |
-| POST   | `/api/auth/register` | —              | Create an account and start a session                              |
-| POST   | `/api/auth/login`    | —              | Start a session                                                    |
-| POST   | `/api/auth/refresh`  | Refresh cookie | Rotate the refresh token, get a new access token                   |
-| POST   | `/api/auth/logout`   | Refresh cookie | End the session                                                    |
-| GET    | `/api/auth/me`       | Bearer token   | The signed-in user                                                 |
-| —      | `/api/workspaces/…`  | Bearer token   | Workspace CRUD and members (see the API reference)                 |
-| —      | `/api/projects/…`    | Bearer token   | Projects, environments and variables (see the API reference)       |
-| —      | `/api/endpoints/…`   | Bearer token   | Saved API endpoints (see the API reference)                        |
+| Method | Path                    | Auth           | Description                                                        |
+| ------ | ----------------------- | -------------- | ------------------------------------------------------------------ |
+| GET    | `/api/health/live`      | —              | Liveness check                                                     |
+| GET    | `/api/health`           | —              | Database, Redis and worker status; **503** if a data store is down |
+| POST   | `/api/auth/register`    | —              | Create an account and start a session                              |
+| POST   | `/api/auth/login`       | —              | Start a session                                                    |
+| POST   | `/api/auth/refresh`     | Refresh cookie | Rotate the refresh token, get a new access token                   |
+| POST   | `/api/auth/logout`      | Refresh cookie | End the session                                                    |
+| GET    | `/api/auth/me`          | Bearer token   | The signed-in user                                                 |
+| —      | `/api/workspaces/…`     | Bearer token   | Workspace CRUD and members (see the API reference)                 |
+| —      | `/api/projects/…`       | Bearer token   | Projects, environments and variables (see the API reference)       |
+| —      | `/api/endpoints/…`      | Bearer token   | Saved API endpoints (see the API reference)                        |
+| POST   | `/api/requests/execute` | Bearer token   | Send a request (SSRF-protected)                                    |
+| GET    | `/api/requests/history` | Bearer token   | Request history with filters and paging                            |
 
 Request and response details for every endpoint: [docs/api.md](docs/api.md).
 
@@ -223,6 +232,11 @@ In place so far:
 - **No credentials in endpoint configuration.** Bearer tokens, basic-auth passwords, API keys and
   credential headers (`Authorization`, `Cookie`, `X-Api-Key`, …) must reference an environment
   variable such as `{{API_TOKEN}}`, so credentials only ever live in encrypted secrets.
+- **SSRF protection** for every request the platform sends: private, loopback, link-local,
+  cloud-metadata and internal hostnames are blocked, checked at connection time (so DNS
+  rebinding cannot bypass it) and on every redirect. Secrets may only be sent to their
+  environment's base URL and are masked in everything returned. See
+  [architecture](docs/architecture.md#request-execution-and-ssrf-protection).
 - **Authorization** is enforced by the API on every request, from one permission table shared
   with the frontend (which only uses it to hide controls). Non-members get **404**, not 403, so
   workspace ids cannot be probed. Member changes run inside a transaction that locks the
@@ -238,7 +252,7 @@ In place so far:
 - No real secrets in the repository: `.env` is git-ignored and `.env.example` holds
   development-only placeholders.
 
-Planned: SSRF protection for monitor requests (Phase 7) and further hardening (Phase 14).
+Planned: further hardening (Phase 14).
 
 ## Roadmap
 

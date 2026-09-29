@@ -15,6 +15,8 @@ export interface RecordedCall {
   url: string;
   authorization: string | null;
   body: unknown;
+  /** Query parameters (axios `params`). */
+  params: unknown;
 }
 
 /**
@@ -33,6 +35,7 @@ export function installFakeApi(handlers: Record<string, Handler | FakeResponse>)
       url,
       authorization: typeof authorization === 'string' ? authorization : null,
       body: typeof config.data === 'string' ? JSON.parse(config.data) : config.data,
+      params: config.params,
     });
 
     const handler = handlers[`${method} ${url}`];
