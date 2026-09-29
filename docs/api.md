@@ -60,19 +60,20 @@ Limits apply per client IP and are shared across API instances (stored in Redis)
 carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `Retry-After`
 (seconds).
 
-| Endpoint                       | Limit                             |
-| ------------------------------ | --------------------------------- |
-| `POST /auth/login`             | 10 **failed** attempts per 15 min |
-| `POST /auth/register`          | 5 per hour                        |
-| `POST /auth/refresh`           | 60 per 15 min                     |
-| `POST /workspaces`             | 20 per hour, per user             |
-| `POST /workspaces/:id/members` | 30 per 15 min, per user           |
-| `POST /projects`               | 30 per hour, per user             |
-| `POST /endpoints`              | 100 per hour, per user            |
-| `POST /requests/execute`       | 60 per minute, per user           |
-| `POST /monitors`               | 60 per hour, per user             |
-| `POST /monitors/:id/run`       | 30 per minute, per user           |
-| `GET /metrics…`                | 120 per minute, per user          |
+| Endpoint                               | Limit                             |
+| -------------------------------------- | --------------------------------- |
+| `POST /auth/login`                     | 10 **failed** attempts per 15 min |
+| `POST /auth/register`                  | 5 per hour                        |
+| `POST /auth/refresh`                   | 60 per 15 min                     |
+| `POST /workspaces`                     | 20 per hour, per user             |
+| `POST /workspaces/:id/members`         | 30 per 15 min, per user           |
+| `POST /projects`                       | 30 per hour, per user             |
+| `POST /endpoints`                      | 100 per hour, per user            |
+| `POST /requests/execute`               | 60 per minute, per user           |
+| `POST /monitors`                       | 60 per hour, per user             |
+| `POST /monitors/:id/run`               | 30 per minute, per user           |
+| `GET /metrics…`                        | 120 per minute, per user          |
+| `POST /notification-channels/:id/test` | 10 per 15 min, per user           |
 
 ## Health
 
@@ -690,3 +691,118 @@ One row per monitor in the project (after filters), plus a count per health stat
 when the last 3 runs failed or half the runs failed, `DEGRADED` when any run failed, and
 `HEALTHY` otherwise; `NO_DATA` means the monitor has never run. The same `health` field
 appears on every monitor returned by `/api/monitors`.
+
+## Alerts
+
+Alert rules watch a monitor and fire alerts (spec §25–27). Everyone in the workspace can read
+them. Creating, editing and deleting rules needs the owner, admin or member role.
+
+### Alert rules
+
+| Method | Path                                                   | Description                                |
+| ------ | ------------------------------------------------------ | ------------------------------------------ |
+| GET    | `/api/alerts?monitorId=…` or `/api/alerts?projectId=…` | Rules of a monitor or a project            |
+| POST   | `/api/alerts`                                          | Create a rule (`201`)                      |
+| GET    | `/api/alerts/:ruleId`                                  | One rule                                   |
+| PATCH  | `/api/alerts/:ruleId`                                  | Change any field except `monitorId`        |
+| DELETE | `/api/alerts/:ruleId`                                  | Delete (`204`); its open alert is resolved |
+
+Body of `POST`:
+
+```json
+{
+  "monitorId": "…",
+  "name": "Error spike",
+  "metric": "ERROR_RATE",
+  "threshold": 5,
+  "durationMinutes": 10,
+  "severity": "HIGH",
+  "enabled": true,
+  "channelIds": ["…"]
+}
+```
+
+| Field             | Rules                                                                                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `metric`          | `LATENCY_P95`, `ERROR_RATE`, `UPTIME`, `STATUS_CODE`, `RESPONSE_TIME`, `CONSECUTIVE_FAILURES`                                                                                  |
+| `threshold`       | ms (1–60000) for latency and response time, % (0–100) for error rate and uptime, 100–599 for status code, 0–100 for consecutive failures. Whole numbers except for percentages |
+| `durationMinutes` | 0–1440. The window for latency, error rate and uptime (at least 1). How long the breach must last for status code and response time. Ignored for consecutive failures          |
+| `severity`        | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`                                                                                                                                            |
+| `channelIds`      | Up to 10 notification channels of the same workspace; an unknown one → `404` on `channelIds`                                                                                   |
+
+A monitor may have at most 20 rules (`409` beyond that). Changing the condition or disabling a
+rule resolves its open alert and resets `state` to `OK`.
+
+The rule view adds:
+
+```json
+{
+  "id": "…",
+  "projectId": "…",
+  "monitor": { "id": "…", "name": "Production health" },
+  "state": "PENDING",
+  "pendingSince": "2026-09-30T18:02:00.000Z",
+  "lastValue": 12.5,
+  "lastEvaluatedAt": "2026-09-30T18:04:00.000Z",
+  "description": "Error rate > 5% over 10 min"
+}
+```
+
+`state` is `OK`, `PENDING` (breached, waiting for the duration) or `FIRING`. `lastValue` is the
+value seen at the last evaluation, in the metric's unit.
+
+### `GET /api/alerts/fired?projectId=…`
+
+Alerts raised in a project, firing ones first, then newest first. Optional `status`
+(`FIRING` or `RESOLVED`) and `limit` (1–100, default 50).
+
+```json
+[
+  {
+    "id": "…",
+    "rule": { "id": "…", "name": "Error spike" },
+    "monitor": { "id": "…", "name": "Production health" },
+    "severity": "HIGH",
+    "status": "FIRING",
+    "value": 12.5,
+    "threshold": 5,
+    "message": "Error rate 12.5% > 5% over 10 min",
+    "firedAt": "2026-09-30T18:04:00.000Z",
+    "resolvedAt": null
+  }
+]
+```
+
+`rule` is `null` when the rule has since been deleted.
+
+## Notification channels
+
+Where alert notifications are sent. Only email exists for now. Everyone in the workspace can
+list channels. Creating, editing, deleting and testing need the owner or admin role.
+
+| Method | Path                                         | Description                             |
+| ------ | -------------------------------------------- | --------------------------------------- |
+| GET    | `/api/notification-channels?workspaceId=…`   | Channels with their last delivery       |
+| POST   | `/api/notification-channels`                 | Create (`201`)                          |
+| PATCH  | `/api/notification-channels/:channelId`      | Change `name`, `enabled` or `config`    |
+| DELETE | `/api/notification-channels/:channelId`      | Delete (`204`); rules stop notifying it |
+| POST   | `/api/notification-channels/:channelId/test` | Queue a test email (`202`)              |
+
+```json
+{
+  "workspaceId": "…",
+  "name": "On-call",
+  "type": "EMAIL",
+  "config": { "recipients": ["oncall@example.com"] }
+}
+```
+
+`recipients` holds 1–20 email addresses. A workspace may have at most 20 channels. The view adds
+`id`, `enabled`, `createdAt` and `lastDelivery`:
+
+```json
+{ "status": "FAILED", "at": "2026-09-30T18:04:00.000Z", "error": "Connection timeout" }
+```
+
+`status` is `PENDING` while delivery is being retried, then `SENT` or `FAILED`. If the job queue
+is unreachable, the test endpoint returns `502 UPSTREAM_ERROR` and records the attempt as failed.

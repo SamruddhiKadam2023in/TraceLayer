@@ -118,6 +118,7 @@ describe('workspace settings', () => {
     return installFakeApi({
       'POST /auth/refresh': SESSION,
       'GET /workspaces': [200, ok([makeWorkspace({ role, memberCount: 2 })])],
+      'GET /notification-channels': [200, ok([])],
       'GET /workspaces/ws-1/members': [
         200,
         ok([member('user-1', 'Ada Lovelace', role, 'ada@example.com'), MEMBERS[1]]),

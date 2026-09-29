@@ -114,3 +114,48 @@ export async function authorizeMonitor(
     throw err;
   }
 }
+
+export interface AlertRuleAccess extends ProjectAccess {
+  ruleId: string;
+}
+
+/** Checks `permission` in the workspace that owns the rule's project. */
+export async function authorizeAlertRule(
+  userId: string,
+  ruleId: string,
+  permission: Permission,
+): Promise<AlertRuleAccess> {
+  const rule = await prisma.alertRule.findUnique({
+    where: { id: ruleId },
+    select: { projectId: true },
+  });
+  if (!rule) throw AppError.notFound('Alert rule');
+  try {
+    return { ...(await authorizeProject(userId, rule.projectId, permission)), ruleId };
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'NOT_FOUND') throw AppError.notFound('Alert rule');
+    throw err;
+  }
+}
+
+export interface ChannelAccess extends WorkspaceAccess {
+  channelId: string;
+}
+
+export async function authorizeChannel(
+  userId: string,
+  channelId: string,
+  permission: Permission,
+): Promise<ChannelAccess> {
+  const channel = await prisma.notificationChannel.findUnique({
+    where: { id: channelId },
+    select: { workspaceId: true },
+  });
+  if (!channel) throw AppError.notFound('Channel');
+  try {
+    return { ...(await authorizeWorkspace(userId, channel.workspaceId, permission)), channelId };
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'NOT_FOUND') throw AppError.notFound('Channel');
+    throw err;
+  }
+}

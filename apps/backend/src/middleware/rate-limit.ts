@@ -152,6 +152,18 @@ export function createMonitorRateLimiters() {
   };
 }
 
+export function createAlertRateLimiters() {
+  return {
+    testChannel: createLimiter({
+      name: 'channel-test',
+      windowMs: 15 * MINUTE_MS,
+      limit: 10,
+      perUser: true,
+      message: 'Too many test notifications. Try again in a few minutes.',
+    }),
+  };
+}
+
 export function createMetricsRateLimiters() {
   return {
     // Generous for dashboards that load several series at once, but bounded.

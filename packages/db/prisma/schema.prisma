@@ -71,8 +71,10 @@ model Workspace {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  members  WorkspaceMember[]
-  projects Project[]
+  members              WorkspaceMember[]
+  projects             Project[]
+  notificationChannels NotificationChannel[]
+  notifications        Notification[]
 
   @@map("workspaces")
 }
@@ -116,6 +118,8 @@ model Project {
   requests     RequestHistory[]
   monitors     Monitor[]
   monitorRuns  MonitorRun[]
+  alertRules   AlertRule[]
+  alerts       Alert[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -284,6 +288,8 @@ model Monitor {
   environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
   runs        MonitorRun[]
+  alertRules  AlertRule[]
+  alerts      Alert[]
 
   @@unique([projectId, name])
   @@index([projectId])
@@ -318,4 +324,173 @@ model MonitorRun {
   @@index([projectId, startedAt(sort: Desc)])
   @@index([startedAt])
   @@map("monitor_runs")
+}
+
+// ─── Alerts & notifications (Phase 10) ───────────────────────────────────────
+
+enum AlertMetric {
+  LATENCY_P95
+  ERROR_RATE
+  UPTIME
+  STATUS_CODE
+  RESPONSE_TIME
+  CONSECUTIVE_FAILURES
+
+  @@map("alert_metric")
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+
+  @@map("severity")
+}
+
+enum AlertRuleState {
+  OK
+  PENDING
+  FIRING
+
+  @@map("alert_rule_state")
+}
+
+/// A threshold on one monitor. Evaluated by the worker after every run of that monitor; its
+/// state (OK → PENDING → FIRING) is stored here so evaluation survives worker restarts.
+model AlertRule {
+  id              String         @id @default(uuid()) @db.Uuid
+  projectId       String         @map("project_id") @db.Uuid
+  monitorId       String         @map("monitor_id") @db.Uuid
+  name            String         @db.VarChar(100)
+  metric          AlertMetric
+  threshold       Float
+  /// Window for aggregate metrics, hold time for per-check metrics (see ALERT_METRIC_INFO).
+  durationMinutes Int            @map("duration_minutes")
+  severity        Severity
+  enabled         Boolean        @default(true)
+  state           AlertRuleState @default(OK)
+  pendingSince    DateTime?      @map("pending_since") @db.Timestamptz(3)
+  lastValue       Float?         @map("last_value")
+  lastEvaluatedAt DateTime?      @map("last_evaluated_at") @db.Timestamptz(3)
+  createdById     String?        @map("created_by_id") @db.Uuid
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  project  Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  monitor  Monitor            @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  channels AlertRuleChannel[]
+  alerts   Alert[]
+
+  @@index([monitorId])
+  @@index([projectId])
+  @@map("alert_rules")
+}
+
+enum AlertStatus {
+  FIRING
+  RESOLVED
+
+  @@map("alert_status")
+}
+
+/// One firing of a rule, from breach to recovery. Incidents (Phase 11) are opened from these.
+model Alert {
+  id         String      @id @default(uuid()) @db.Uuid
+  /// Kept (as null) if the rule is deleted, so the history survives.
+  ruleId     String?     @map("rule_id") @db.Uuid
+  monitorId  String      @map("monitor_id") @db.Uuid
+  projectId  String      @map("project_id") @db.Uuid
+  severity   Severity
+  status     AlertStatus @default(FIRING)
+  value      Float?
+  threshold  Float
+  message    String      @db.VarChar(500)
+  firedAt    DateTime    @default(now()) @map("fired_at") @db.Timestamptz(3)
+  resolvedAt DateTime?   @map("resolved_at") @db.Timestamptz(3)
+
+  rule          AlertRule?     @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  monitor       Monitor        @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@index([projectId, firedAt(sort: Desc)])
+  @@index([ruleId, status])
+  @@map("alerts")
+}
+
+enum ChannelType {
+  EMAIL
+
+  @@map("channel_type")
+}
+
+/// Where notifications go. Email only for now; `type` + `config` leave room for Slack,
+/// Discord, PagerDuty or webhooks without schema changes to rules or alerts.
+model NotificationChannel {
+  id          String      @id @default(uuid()) @db.Uuid
+  workspaceId String      @map("workspace_id") @db.Uuid
+  name        String      @db.VarChar(100)
+  type        ChannelType
+  config      Json
+  enabled     Boolean     @default(true)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  rules         AlertRuleChannel[]
+  notifications Notification[]
+
+  @@index([workspaceId])
+  @@map("notification_channels")
+}
+
+model AlertRuleChannel {
+  ruleId    String @map("rule_id") @db.Uuid
+  channelId String @map("channel_id") @db.Uuid
+
+  rule    AlertRule           @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  channel NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([ruleId, channelId])
+  @@index([channelId])
+  @@map("alert_rule_channels")
+}
+
+enum NotificationEvent {
+  ALERT_FIRED
+  ALERT_RESOLVED
+  TEST
+
+  @@map("notification_event")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+
+  @@map("notification_status")
+}
+
+/// Delivery log: one row per message per channel, updated by the worker as it is sent.
+model Notification {
+  id          String             @id @default(uuid()) @db.Uuid
+  workspaceId String             @map("workspace_id") @db.Uuid
+  channelId   String             @map("channel_id") @db.Uuid
+  alertId     String?            @map("alert_id") @db.Uuid
+  event       NotificationEvent
+  status      NotificationStatus @default(PENDING)
+  attempts    Int                @default(0)
+  error       String?            @db.VarChar(500)
+  sentAt      DateTime?          @map("sent_at") @db.Timestamptz(3)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  alert     Alert?              @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt(sort: Desc)])
+  @@index([alertId])
+  @@map("notifications")
 }

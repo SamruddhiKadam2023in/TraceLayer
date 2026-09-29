@@ -4,7 +4,7 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 9 of 20 (Analytics dashboard) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 10 of 20 (Alerts and notifications) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
 > and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
@@ -12,6 +12,8 @@ caused the failure.
 > run endpoints on a schedule (Redis + BullMQ + a dedicated worker) and record every result;
 > uptime, error rate, latency percentiles and health are computed from those runs and shown
 > on a workspace dashboard and per-project, per-endpoint and per-monitor analytics with charts.
+> Alert rules on monitors fire and resolve alerts automatically and email the workspace's
+> notification channels.
 > Product features are added phase by
 > phase following the [master specification](docs/SPEC.md). Sections below marked _(planned)_
 > describe features that do not exist yet.
@@ -39,20 +41,21 @@ monitoring and investigation tool, not a Postman clone.
 
 ## Product features
 
-| Feature                                                                               | Status                    |
-| ------------------------------------------------------------------------------------- | ------------------------- |
-| System status page (live API, database, Redis and worker health)                      | ✅ Phase 1                |
-| Accounts and authentication (JWT access + rotating refresh tokens)                    | ✅ Phase 2                |
-| Workspaces with roles (owner, admin, member, viewer)                                  | ✅ Phase 3                |
-| Projects, environments and environment variables (encrypted secrets)                  | ✅ Phase 4                |
-| API endpoints: method, URL, headers, params, body, auth, timeout, tags                | ✅ Phase 5                |
-| Request builder with response viewer and request history, SSRF-protected              | ✅ Phase 6                |
-| Scheduled monitors (availability, status, performance, validation)                    | ✅ Phase 7                |
-| Metrics: uptime, error rate, P50/P95/P99, status codes, health                        | ✅ Phase 8                |
-| Analytics dashboard: metric cards, latency/error/volume/status charts, monitor health | ✅ Phase 9                |
-| Alert rules, incidents and incident timelines                                         | _(planned, Phases 10–11)_ |
-| Real-time dashboard updates                                                           | _(planned, Phase 12)_     |
-| API dependency map                                                                    | _(planned, Phase 13)_     |
+| Feature                                                                               | Status                |
+| ------------------------------------------------------------------------------------- | --------------------- |
+| System status page (live API, database, Redis and worker health)                      | ✅ Phase 1            |
+| Accounts and authentication (JWT access + rotating refresh tokens)                    | ✅ Phase 2            |
+| Workspaces with roles (owner, admin, member, viewer)                                  | ✅ Phase 3            |
+| Projects, environments and environment variables (encrypted secrets)                  | ✅ Phase 4            |
+| API endpoints: method, URL, headers, params, body, auth, timeout, tags                | ✅ Phase 5            |
+| Request builder with response viewer and request history, SSRF-protected              | ✅ Phase 6            |
+| Scheduled monitors (availability, status, performance, validation)                    | ✅ Phase 7            |
+| Metrics: uptime, error rate, P50/P95/P99, status codes, health                        | ✅ Phase 8            |
+| Analytics dashboard: metric cards, latency/error/volume/status charts, monitor health | ✅ Phase 9            |
+| Alert rules with severities, fired-alert history, email notification channels         | ✅ Phase 10           |
+| Incidents and incident timelines                                                      | _(planned, Phase 11)_ |
+| Real-time dashboard updates                                                           | _(planned, Phase 12)_ |
+| API dependency map                                                                    | _(planned, Phase 13)_ |
 
 ## Architecture
 
@@ -107,12 +110,13 @@ cp .env.example .env        # development defaults work as-is
 docker compose up --build
 ```
 
-| Service    | URL                                          |
-| ---------- | -------------------------------------------- |
-| App        | http://localhost:8080                        |
-| API health | http://localhost:4000/api/health             |
-| PostgreSQL | `localhost:5434` (user/pass/db `tracelayer`) |
-| Redis      | `localhost:6379`                             |
+| Service    | URL                                            |
+| ---------- | ---------------------------------------------- |
+| App        | http://localhost:8080                          |
+| API health | http://localhost:4000/api/health               |
+| PostgreSQL | `localhost:5434` (user/pass/db `tracelayer`)   |
+| Redis      | `localhost:6379`                               |
+| Mailpit    | http://localhost:8025 (alert emails land here) |
 
 The backend applies database migrations automatically on start. Stop with `docker compose down`;
 add `-v` to also delete the database and Redis volumes.
@@ -211,22 +215,24 @@ All endpoints live under `/api` and return one of two shapes:
 { "success": false, "error": { "code": "NOT_FOUND", "message": "…", "requestId": "…" } }
 ```
 
-| Method | Path                    | Auth           | Description                                                        |
-| ------ | ----------------------- | -------------- | ------------------------------------------------------------------ |
-| GET    | `/api/health/live`      | —              | Liveness check                                                     |
-| GET    | `/api/health`           | —              | Database, Redis and worker status; **503** if a data store is down |
-| POST   | `/api/auth/register`    | —              | Create an account and start a session                              |
-| POST   | `/api/auth/login`       | —              | Start a session                                                    |
-| POST   | `/api/auth/refresh`     | Refresh cookie | Rotate the refresh token, get a new access token                   |
-| POST   | `/api/auth/logout`      | Refresh cookie | End the session                                                    |
-| GET    | `/api/auth/me`          | Bearer token   | The signed-in user                                                 |
-| —      | `/api/workspaces/…`     | Bearer token   | Workspace CRUD and members (see the API reference)                 |
-| —      | `/api/projects/…`       | Bearer token   | Projects, environments and variables (see the API reference)       |
-| —      | `/api/endpoints/…`      | Bearer token   | Saved API endpoints (see the API reference)                        |
-| POST   | `/api/requests/execute` | Bearer token   | Send a request (SSRF-protected)                                    |
-| GET    | `/api/requests/history` | Bearer token   | Request history with filters and paging                            |
-| —      | `/api/monitors/…`       | Bearer token   | Monitors, run now and run history (see the API reference)          |
-| GET    | `/api/metrics…`         | Bearer token   | Metrics summary, per-monitor overview, latency and error series    |
+| Method | Path                           | Auth           | Description                                                        |
+| ------ | ------------------------------ | -------------- | ------------------------------------------------------------------ |
+| GET    | `/api/health/live`             | —              | Liveness check                                                     |
+| GET    | `/api/health`                  | —              | Database, Redis and worker status; **503** if a data store is down |
+| POST   | `/api/auth/register`           | —              | Create an account and start a session                              |
+| POST   | `/api/auth/login`              | —              | Start a session                                                    |
+| POST   | `/api/auth/refresh`            | Refresh cookie | Rotate the refresh token, get a new access token                   |
+| POST   | `/api/auth/logout`             | Refresh cookie | End the session                                                    |
+| GET    | `/api/auth/me`                 | Bearer token   | The signed-in user                                                 |
+| —      | `/api/workspaces/…`            | Bearer token   | Workspace CRUD and members (see the API reference)                 |
+| —      | `/api/projects/…`              | Bearer token   | Projects, environments and variables (see the API reference)       |
+| —      | `/api/endpoints/…`             | Bearer token   | Saved API endpoints (see the API reference)                        |
+| POST   | `/api/requests/execute`        | Bearer token   | Send a request (SSRF-protected)                                    |
+| GET    | `/api/requests/history`        | Bearer token   | Request history with filters and paging                            |
+| —      | `/api/monitors/…`              | Bearer token   | Monitors, run now and run history (see the API reference)          |
+| GET    | `/api/metrics…`                | Bearer token   | Metrics summary, per-monitor overview, latency and error series    |
+| —      | `/api/alerts/…`                | Bearer token   | Alert rules and fired alerts (see the API reference)               |
+| —      | `/api/notification-channels/…` | Bearer token   | Email notification channels and test sends                         |
 
 Request and response details for every endpoint: [docs/api.md](docs/api.md).
 

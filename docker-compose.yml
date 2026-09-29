@@ -3,6 +3,7 @@
 #   API        http://localhost:4000/api/health
 #   Postgres   localhost:${POSTGRES_PORT:-5434}
 #   Redis      localhost:${REDIS_PORT:-6379}
+#   Mailpit    http://localhost:${MAILPIT_PORT:-8025}  (catches every alert email sent by the local stack)
 #
 # Values fall back to development defaults so the stack starts without a .env file.
 # Never reuse these defaults outside local development.
@@ -98,10 +99,25 @@ services:
     environment:
       <<: *server-env
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
+      # Alert emails go to Mailpit by default; point SMTP_* at a real server to send them.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-TraceLayer <alerts@tracelayer.local>}
+      APP_URL: http://localhost:${FRONTEND_PORT:-8080}
     depends_on:
+      mailpit:
+        condition: service_started
       # The backend applies migrations on start; wait for it before processing jobs.
       backend:
         condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    ports:
+      - '${MAILPIT_PORT:-8025}:8025'
 
   frontend:
     build:

@@ -23,6 +23,17 @@ const envSchema = z.object({
   /** Redis key prefix for BullMQ; must match the API's. */
   QUEUE_PREFIX: z.string().min(1).default('tracelayer'),
   /** SSRF protection off: local development only, never in production. */
+  // ── Email notifications. An empty SMTP_HOST renders emails to the log instead of sending.
+  SMTP_HOST: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  SMTP_FROM: z.string().min(1).default('TraceLayer <alerts@tracelayer.local>'),
+  /** Public URL of the web app, for links in notifications. */
+  APP_URL: z.url().default('http://localhost:8080'),
   ALLOW_PRIVATE_NETWORK_TARGETS: z
     .enum(['true', 'false'])
     .default('false')

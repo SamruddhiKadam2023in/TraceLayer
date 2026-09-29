@@ -5,6 +5,7 @@ import { logger } from './utils/logger';
 import { prisma } from './lib/prisma';
 import { redis } from './lib/redis';
 import { closeMonitorQueue } from './lib/monitor-queue';
+import { closeNotificationQueue } from './lib/notification-queue';
 import { closeConnectionPools } from '@tracelayer/executor';
 
 async function main(): Promise<void> {
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
         prisma.$disconnect(),
         redis.quit(),
         closeMonitorQueue(),
+        closeNotificationQueue(),
         closeConnectionPools(),
       ]);
       process.exit(0);

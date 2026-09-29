@@ -1,6 +1,7 @@
 import { DangerZone } from '@/components/settings/DangerZone';
 import { GeneralSettings } from '@/components/settings/GeneralSettings';
 import { MembersSettings } from '@/components/settings/MembersSettings';
+import { NotificationSettings } from '@/components/settings/NotificationSettings';
 import { useCurrentWorkspace } from '@/stores/workspace.store';
 
 export function WorkspaceSettingsPage() {
@@ -16,6 +17,7 @@ export function WorkspaceSettingsPage() {
       <div key={workspace.id} className="mt-6 flex flex-col gap-6">
         <GeneralSettings workspace={workspace} />
         <MembersSettings workspace={workspace} />
+        <NotificationSettings workspace={workspace} />
         <DangerZone workspace={workspace} />
       </div>
     </div>

@@ -7,3 +7,4 @@ export * from './endpoint';
 export * from './request';
 export * from './monitor';
 export * from './metrics';
+export * from './alert';

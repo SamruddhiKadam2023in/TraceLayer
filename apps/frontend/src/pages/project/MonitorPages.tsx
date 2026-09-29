@@ -15,6 +15,7 @@ import { MethodBadge } from '@/components/endpoints/MethodBadge';
 import { MonitorForm } from '@/components/monitors/MonitorForm';
 import { toFormValues } from '@/components/monitors/monitor-form-schema';
 import { HealthBadge } from '@/components/monitors/HealthBadge';
+import { AlertRulesSection } from '@/components/alerts/AlertRulesSection';
 import { LazyAnalyticsView as AnalyticsView } from '@/components/analytics/LazyAnalyticsView';
 import { formatBytes } from '@/components/requests/status';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -377,6 +378,7 @@ export function MonitorDetailPage() {
 
       {actionError && <ErrorAlert>{actionError}</ErrorAlert>}
       <Summary monitor={current} />
+      <AlertRulesSection monitorId={current.id} workspaceId={workspace.id} canManage={canManage} />
       <AnalyticsView
         scope={{ projectId: project.id, monitorId: current.id }}
         showMonitors={false}

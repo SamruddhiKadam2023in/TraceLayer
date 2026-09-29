@@ -154,16 +154,16 @@ Both shapes are defined once in `@tracelayer/shared` and used by the backend and
 
 ### Worker — `apps/worker`
 
-- A separate Node process consuming the BullMQ queue `monitor-checks`, so slow or failing
-  external APIs can never block the HTTP server.
+- A separate Node process consuming the BullMQ queues `monitor-checks` (checks, then alert-rule
+  evaluation) and `notifications` (email delivery), so slow or failing external APIs and mail
+  servers can never block the HTTP server.
 - Concurrency is configurable (`WORKER_CONCURRENCY`, default 10).
 - **Heartbeat.** Every 10 s the worker writes the current time to the Redis key
   `tracelayer:worker:heartbeat` with a 30 s expiry. The API reads that key: if it has expired,
   the worker is reported down. No extra endpoint or port is needed on the worker.
 - **Graceful shutdown.** On `SIGTERM`/`SIGINT` it stops taking jobs, waits for in-flight jobs
   to finish (hard exit after 15 s), removes its heartbeat and closes its connections.
-- Phase 1 only logs received jobs. Monitor execution (SSRF-safe HTTP checks, result storage,
-  alert-rule evaluation) arrives in Phase 7.
+- See _Monitoring engine_ and _Alerts and notifications_ for what the jobs do.
 
 ### Database — PostgreSQL + Prisma (`packages/db`)
 
@@ -658,6 +658,74 @@ on demand, so it is not part of the initial download (sign-in, projects, setting
 This cut the initial JavaScript from one 1.1 MB file to about 667 KB (205 KB gzipped). The
 charts file (about 445 KB) is fetched the first time a page with charts opens.
 
+## Alerts and notifications
+
+An **alert rule** watches one monitor. It says "IF a metric crosses a threshold (FOR a duration)
+THEN raise an alert of this severity and notify these channels" (spec §25–28).
+
+**Metrics.** A rule measures one of six things:
+
+| Metric                 | Fires when                                                             | Duration means                                  |
+| ---------------------- | ---------------------------------------------------------------------- | ----------------------------------------------- |
+| `LATENCY_P95`          | P95 latency > threshold (ms)                                           | the window measured, e.g. "over the last 5 min" |
+| `ERROR_RATE`           | error rate > threshold (%)                                             | the window measured                             |
+| `UPTIME`               | uptime < threshold (%)                                                 | the window measured                             |
+| `STATUS_CODE`          | the latest check returned exactly this code                            | how long it must persist (0 = at once)          |
+| `RESPONSE_TIME`        | the latest check took > threshold (ms); no response counts as too slow | how long it must persist                        |
+| `CONSECUTIVE_FAILURES` | more than N checks in a row failed                                     | not used                                        |
+
+Thresholds are range-checked per metric (for example 0–100 for percentages, 100–599 for status
+codes). The rules live in `packages/shared/src/alert.ts`, so the form and the API validate
+the same way.
+
+**Evaluation.** The worker evaluates a monitor's enabled rules right after storing each check
+result, in one transaction (`apps/worker/src/alerts/evaluate-rules.ts`):
+
+1. The rule rows are locked (`SELECT … FOR UPDATE`), so two checks of the same monitor finishing
+   together (a scheduled run and a manual "Run now") cannot both fire the same alert. A test
+   forces this overlap and fails without the lock.
+2. Window statistics are computed in SQL with the same rules as the metrics API (latency only
+   from runs that got a response), once per distinct window length.
+3. The pure functions `checkCondition` and `nextRuleState` decide the new state:
+   - `OK` → `FIRING` when the condition is breached. Sustained metrics go through `PENDING`
+     first and fire only once the breach has lasted `durationMinutes`.
+   - `FIRING` → `OK` as soon as the condition clears. The open alert is marked resolved.
+   - No data in the window (for example a paused monitor) changes nothing.
+4. A transition to `FIRING` creates an `Alert` row. A transition back resolves it. At most one
+   alert per rule is open at a time.
+
+Editing a rule's condition, disabling it or deleting it resolves its open alert and resets the
+rule to `OK`, so an alert never stays open against a condition that no longer exists. Alerts of
+a deleted rule are kept (with `ruleId` set to null) as history.
+
+**Notifications.** Every fired or resolved alert creates one `Notification` row per enabled
+channel of the rule, and a job on the BullMQ `notifications` queue per row.
+
+- A second worker (concurrency 5) delivers the jobs through a channel adapter registry. Only
+  email exists for now (nodemailer). Other channel types can be added as adapters.
+- Delivery is retried 5 times with exponential backoff (30 s, 1 min, 2 min, 4 min). Each attempt
+  updates the row: `SENT`, `PENDING` with the error while retries remain, then `FAILED`.
+- The workspace settings page shows each channel's last delivery status, and **Send test**
+  queues a `TEST` notification.
+- Messages are rendered as text and HTML (all values escaped) and link back to the monitor via
+  `APP_URL`.
+- With `SMTP_HOST` empty, the worker logs emails instead of sending them. The Docker stack
+  points it at the bundled **Mailpit** (http://localhost:8025), which catches every email.
+
+**Permissions.** Everyone in the workspace can see rules, alerts and channels. Creating or
+editing rules needs `monitoring.manage` (owner, admin, member). Channels hold email addresses of
+people, so managing them needs `members.manage` (owner, admin). A rule may only notify channels
+of its own workspace. Limits: 20 rules per monitor, 20 channels per workspace, 20 recipients and
+10 channels per rule.
+
+**Frontend.**
+
+- Each monitor page has an **Alert rules** section with state (OK, Pending, Firing, Disabled),
+  severity, the condition in words and the last observed value. The create/edit dialog previews
+  the condition ("Fires when error rate > 5% over 10 min").
+- Each project has an **Alerts** tab listing fired alerts, open ones first.
+- Workspace settings has a **Notifications** section for email channels.
+
 ## Configuration
 
 All configuration comes from environment variables; see [`.env.example`](../.env.example) for
@@ -674,6 +742,7 @@ development-only placeholder.
 | `redis`    | `redis:7-alpine`               | `6379`        | Named volume `redisdata`, AOF, `noeviction`      |
 | `backend`  | `Dockerfile` target `backend`  | `4000`        | Runs migrations, then the API; health-checked    |
 | `worker`   | `Dockerfile` target `worker`   | —             | Starts after the backend is healthy              |
+| `mailpit`  | `axllent/mailpit`              | `8025`        | Local SMTP sink; web inbox for alert emails      |
 | `frontend` | `Dockerfile` target `frontend` | `8080` → 80   | nginx: static SPA + reverse proxy to the backend |
 
 The Postgres host port defaults to `5434` so it does not clash with a locally installed

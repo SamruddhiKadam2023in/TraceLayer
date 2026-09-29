@@ -7,6 +7,7 @@ import { createEndpointRouter } from './endpoint.routes';
 import { createRequestRouter } from './request.routes';
 import { createMonitorRouter } from './monitor.routes';
 import { createMetricsRouter } from './metrics.routes';
+import { createAlertRouter, createChannelRouter } from './alert.routes';
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -18,5 +19,7 @@ export function createApiRouter(): Router {
   router.use('/requests', createRequestRouter());
   router.use('/monitors', createMonitorRouter());
   router.use('/metrics', createMetricsRouter());
+  router.use('/alerts', createAlertRouter());
+  router.use('/notification-channels', createChannelRouter());
   return router;
 }
