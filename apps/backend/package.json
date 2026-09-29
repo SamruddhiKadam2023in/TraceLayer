@@ -16,6 +16,7 @@
     "@tracelayer/executor": "workspace:^",
     "@tracelayer/shared": "workspace:^",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17",

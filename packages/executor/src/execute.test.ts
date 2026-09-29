@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { gzipSync } from 'node:zlib';
-import { executeRequest } from './execute';
+import { closeConnectionPools, executeRequest } from './execute';
 import { prepareRequest, SECRET_MASK, type RequestSpec, type ResolvedEnvironment } from './prepare';
 
 type Handler = (req: IncomingMessage, res: ServerResponse, body: string) => void;
@@ -70,6 +70,9 @@ async function server(handler: Handler): Promise<TestServer> {
 }
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()));
+});
+afterAll(async () => {
+  await closeConnectionPools();
 });
 
 describe('executeRequest', () => {

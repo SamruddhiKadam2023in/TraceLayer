@@ -9,6 +9,7 @@ import {
 } from '@tracelayer/shared';
 import { lockRow } from '../lib/locks';
 import { prisma } from '../lib/prisma';
+import { monitorIdsFor, unscheduleMonitors } from './monitor-cleanup.service';
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { compareNames } from '../utils/sort';
@@ -204,5 +205,7 @@ export async function updateEndpoint(
 }
 
 export async function deleteEndpoint(access: EndpointAccess): Promise<void> {
+  const monitorIds = await monitorIdsFor({ endpointId: access.endpointId });
   await prisma.endpoint.delete({ where: { id: access.endpointId } });
+  await unscheduleMonitors(monitorIds);
 }

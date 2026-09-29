@@ -8,7 +8,8 @@ export const logger = pino({
     paths: ['*.headers.authorization', '*.headers.cookie', '*.password', '*.token', '*.secret'],
     censor: '[REDACTED]',
   },
-  ...(env.NODE_ENV === 'production'
+  // Pretty printing runs in a worker thread; keep it out of production and tests.
+  ...(env.NODE_ENV === 'production' || env.NODE_ENV === 'test'
     ? {}
     : {
         transport: {

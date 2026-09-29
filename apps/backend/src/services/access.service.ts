@@ -90,3 +90,27 @@ export async function authorizeEndpoint(
     throw err;
   }
 }
+
+export interface MonitorAccess extends ProjectAccess {
+  monitorId: string;
+}
+
+/** Checks `permission` in the workspace that owns the monitor's project. */
+export async function authorizeMonitor(
+  userId: string,
+  monitorId: string,
+  permission: Permission,
+): Promise<MonitorAccess> {
+  const monitor = await prisma.monitor.findUnique({
+    where: { id: monitorId },
+    select: { projectId: true },
+  });
+  if (!monitor) throw AppError.notFound('Monitor');
+  try {
+    const access = await authorizeProject(userId, monitor.projectId, permission);
+    return { ...access, monitorId };
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'NOT_FOUND') throw AppError.notFound('Monitor');
+    throw err;
+  }
+}

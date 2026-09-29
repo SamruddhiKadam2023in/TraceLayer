@@ -4,6 +4,8 @@ import { createApp } from './app';
 import { logger } from './utils/logger';
 import { prisma } from './lib/prisma';
 import { redis } from './lib/redis';
+import { closeMonitorQueue } from './lib/monitor-queue';
+import { closeConnectionPools } from '@tracelayer/executor';
 
 async function main(): Promise<void> {
   await redis.connect().catch((err: Error) => {
@@ -22,7 +24,12 @@ async function main(): Promise<void> {
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down API');
     server.close(async () => {
-      await Promise.allSettled([prisma.$disconnect(), redis.quit()]);
+      await Promise.allSettled([
+        prisma.$disconnect(),
+        redis.quit(),
+        closeMonitorQueue(),
+        closeConnectionPools(),
+      ]);
       process.exit(0);
     });
     setTimeout(() => process.exit(1), 10_000).unref();

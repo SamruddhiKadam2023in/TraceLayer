@@ -30,3 +30,19 @@ export function formatDate(iso: string): string {
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
+
+export function formatInterval(seconds: number): string {
+  if (seconds % 3600 === 0)
+    return seconds === 3600 ? 'every hour' : `every ${seconds / 3600} hours`;
+  if (seconds % 60 === 0) return seconds === 60 ? 'every minute' : `every ${seconds / 60} min`;
+  return `every ${seconds}s`;
+}
+
+/** "just now", "5 min ago", "3 h ago", then a date. */
+export function formatRelative(iso: string, now = Date.now()): string {
+  const seconds = Math.round((now - new Date(iso).getTime()) / 1000);
+  if (seconds < 45) return 'just now';
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
+  if (seconds < 86_400) return `${Math.round(seconds / 3600)} h ago`;
+  return formatDate(iso);
+}

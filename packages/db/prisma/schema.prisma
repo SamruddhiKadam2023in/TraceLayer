@@ -27,6 +27,7 @@ model User {
   createdProjects  Project[]
   createdEndpoints Endpoint[]
   requestHistory   RequestHistory[]
+  createdMonitors  Monitor[]
 
   @@map("users")
 }
@@ -113,6 +114,8 @@ model Project {
   environments Environment[]
   endpoints    Endpoint[]
   requests     RequestHistory[]
+  monitors     Monitor[]
+  monitorRuns  MonitorRun[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -135,6 +138,7 @@ model Environment {
   variables EnvironmentVariable[]
   endpoints Endpoint[]
   requests  RequestHistory[]
+  monitors  Monitor[]
 
   @@unique([projectId, name])
   @@index([projectId])
@@ -201,6 +205,7 @@ model Endpoint {
   environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
   requests    RequestHistory[]
+  monitors    Monitor[]
 
   @@unique([projectId, name])
   @@index([projectId])
@@ -237,4 +242,80 @@ model RequestHistory {
   @@index([projectId, createdAt(sort: Desc)])
   @@index([endpointId, createdAt(sort: Desc)])
   @@map("request_history")
+}
+
+// ─── Monitors (Phase 7) ──────────────────────────────────────────────────────
+
+enum MonitorType {
+  AVAILABILITY
+  STATUS
+  PERFORMANCE
+  RESPONSE_VALIDATION
+
+  @@map("monitor_type")
+}
+
+/// A scheduled check of one endpoint in one environment. Scheduling itself lives in BullMQ
+/// (job scheduler "monitor:<id>"); this row is the source of truth the worker reconciles to.
+model Monitor {
+  id                  String      @id @default(uuid()) @db.Uuid
+  projectId           String      @map("project_id") @db.Uuid
+  endpointId          String      @map("endpoint_id") @db.Uuid
+  /// Cleared if the environment is deleted; runs then fail with CONFIG_ERROR until fixed.
+  environmentId       String?     @map("environment_id") @db.Uuid
+  name                String      @db.VarChar(100)
+  type                MonitorType
+  intervalSeconds     Int         @map("interval_seconds")
+  timeoutMs           Int         @map("timeout_ms")
+  expectedStatus      Int?        @map("expected_status")
+  latencyThresholdMs  Int?        @map("latency_threshold_ms")
+  assertions          Json        @default("[]")
+  enabled             Boolean     @default(true)
+  /// Denormalised from the latest run, for fast lists.
+  lastRunAt           DateTime?   @map("last_run_at") @db.Timestamptz(3)
+  lastRunSuccess      Boolean?    @map("last_run_success")
+  consecutiveFailures Int         @default(0) @map("consecutive_failures")
+  createdById         String?     @map("created_by_id") @db.Uuid
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  endpoint    Endpoint     @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  runs        MonitorRun[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+  @@index([endpointId])
+  @@index([enabled])
+  @@map("monitors")
+}
+
+/// One execution of a monitor: the raw data behind every metric (Phase 8).
+model MonitorRun {
+  id             String   @id @default(uuid()) @db.Uuid
+  monitorId      String   @map("monitor_id") @db.Uuid
+  /// Copied from the monitor at run time so metrics can group runs without joins.
+  projectId      String   @map("project_id") @db.Uuid
+  endpointId     String   @map("endpoint_id") @db.Uuid
+  environmentId  String?  @map("environment_id") @db.Uuid
+  startedAt      DateTime @map("started_at") @db.Timestamptz(3)
+  success        Boolean
+  statusCode     Int?     @map("status_code")
+  durationMs     Int?     @map("duration_ms")
+  sizeBytes      Int?     @map("size_bytes")
+  timedOut       Boolean  @default(false) @map("timed_out")
+  failureReason  String?  @map("failure_reason") @db.VarChar(40)
+  failureMessage String?  @map("failure_message") @db.VarChar(500)
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Time-series access: a monitor's runs in a time window, newest first.
+  @@index([monitorId, startedAt(sort: Desc)])
+  /// Project-wide dashboards and retention pruning by time.
+  @@index([projectId, startedAt(sort: Desc)])
+  @@index([startedAt])
+  @@map("monitor_runs")
 }

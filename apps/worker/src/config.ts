@@ -13,6 +13,20 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(10),
+  /** Decrypts secret environment variables for monitor requests. Must match the API's key. */
+  ENCRYPTION_KEY: z
+    .string()
+    .refine(
+      (v) => Buffer.from(v, 'base64').length === 32,
+      'ENCRYPTION_KEY must be 32 bytes, base64',
+    ),
+  /** Redis key prefix for BullMQ; must match the API's. */
+  QUEUE_PREFIX: z.string().min(1).default('tracelayer'),
+  /** SSRF protection off: local development only, never in production. */
+  ALLOW_PRIVATE_NETWORK_TARGETS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 });
 
 export type WorkerEnv = z.infer<typeof envSchema>;

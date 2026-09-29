@@ -6,6 +6,7 @@ import {
 } from '@tracelayer/shared';
 import { lockRow } from '../lib/locks';
 import { prisma } from '../lib/prisma';
+import { monitorIdsFor, unscheduleMonitors } from './monitor-cleanup.service';
 import { AppError } from '../utils/errors';
 import { compareNames } from '../utils/sort';
 import type { ProjectAccess, WorkspaceAccess } from './access.service';
@@ -125,5 +126,7 @@ export async function updateProject(
 
 /** Deletes the project; environments and variables cascade in the database. */
 export async function deleteProject(access: ProjectAccess): Promise<void> {
+  const monitorIds = await monitorIdsFor({ projectId: access.projectId });
   await prisma.project.delete({ where: { id: access.projectId } });
+  await unscheduleMonitors(monitorIds);
 }

@@ -1,10 +1,5 @@
 import type { Prisma } from '@tracelayer/db';
-import {
-  executeRequest,
-  prepareRequest,
-  RequestPreparationError,
-  type ResolvedEnvironment,
-} from '@tracelayer/executor';
+import { executeRequest, prepareRequest, RequestPreparationError } from '@tracelayer/executor';
 import {
   HISTORY_RETENTION_PER_PROJECT,
   type EndpointRequest,
@@ -18,33 +13,11 @@ import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
-import { decryptSecret } from '../utils/secret-box';
 import type { ProjectAccess } from './access.service';
+import { loadResolvedEnvironment } from './resolved-environment.service';
 
 function fieldNotFound(path: string, message: string): AppError {
   return new AppError('NOT_FOUND', message, [{ path, message }]);
-}
-
-/** Loads the environment with secrets decrypted. Server-side only: never returned to a client. */
-async function loadEnvironment(
-  projectId: string,
-  environmentId: string | null,
-): Promise<ResolvedEnvironment | null> {
-  if (environmentId === null) return null;
-  const environment = await prisma.environment.findFirst({
-    where: { id: environmentId, projectId },
-    include: { variables: true },
-  });
-  if (!environment) throw fieldNotFound('environmentId', 'Environment not found in this project');
-  return {
-    name: environment.name,
-    baseUrl: environment.baseUrl,
-    variables: environment.variables.map((v) => ({
-      key: v.key,
-      isSecret: v.isSecret,
-      value: v.isSecret ? decryptSecret(v.encryptedValue ?? '') : (v.value ?? ''),
-    })),
-  };
 }
 
 async function assertEndpointInProject(
@@ -91,7 +64,7 @@ export async function runRequest(
   input: ExecuteInput,
 ): Promise<ExecuteRequestResponse> {
   await assertEndpointInProject(access.projectId, input.endpointId);
-  const environment = await loadEnvironment(access.projectId, input.environmentId);
+  const environment = await loadResolvedEnvironment(access.projectId, input.environmentId);
 
   let prepared;
   try {

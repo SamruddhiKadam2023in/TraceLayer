@@ -28,6 +28,13 @@ function agentFor(allowPrivateNetwork: boolean): Agent {
   return agent;
 }
 
+/** Closes pooled keep-alive connections; call on shutdown so the process can exit promptly. */
+export async function closeConnectionPools(): Promise<void> {
+  const pools = [...agents.values()];
+  agents.clear();
+  await Promise.all(pools.map((agent) => agent.close()));
+}
+
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const TEXTUAL =
   /^(text\/|application\/([\w.+-]*\+)?(json|xml|javascript|x-www-form-urlencoded|graphql|yaml|x-ndjson))/i;

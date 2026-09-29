@@ -40,6 +40,8 @@ const envSchema = z.object({
    * Let executed requests reach private, loopback and link-local addresses (SSRF protection
    * off). Only for local development against APIs on your own machine. Never in production.
    */
+  /** Redis key prefix for BullMQ queues; must match the worker's. */
+  QUEUE_PREFIX: z.string().min(1).default('tracelayer'),
   ALLOW_PRIVATE_NETWORK_TARGETS: z
     .enum(['true', 'false'])
     .default('false')

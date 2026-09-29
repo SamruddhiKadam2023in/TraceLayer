@@ -132,6 +132,26 @@ export function createEndpointRateLimiters() {
   };
 }
 
+export function createMonitorRateLimiters() {
+  return {
+    createMonitor: createLimiter({
+      name: 'monitor-create',
+      windowMs: 60 * MINUTE_MS,
+      limit: 60,
+      perUser: true,
+      message: 'Too many monitors created. Try again later.',
+    }),
+    // Each "run now" makes an outbound request, like executing a request manually.
+    runMonitor: createLimiter({
+      name: 'monitor-run',
+      windowMs: MINUTE_MS,
+      limit: 30,
+      perUser: true,
+      message: 'Too many manual runs. Wait a minute and try again.',
+    }),
+  };
+}
+
 export function createRequestRateLimiters() {
   return {
     // Each execution makes an outbound request, so this also caps use of the platform as a proxy.

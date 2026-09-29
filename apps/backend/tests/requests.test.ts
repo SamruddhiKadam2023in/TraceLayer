@@ -4,6 +4,7 @@ import request from 'supertest';
 import type { WorkspaceRole } from '@tracelayer/shared';
 import { createApp } from '../src/app';
 import { prisma } from '../src/lib/prisma';
+import { closeConnectionPools } from '@tracelayer/executor';
 import { createTestUser, resetDatabase, type TestUser } from './helpers';
 
 const SECRET = 'sk_live_super_secret_42';
@@ -28,6 +29,7 @@ afterAll(async () => {
   upstream.closeAllConnections();
   await new Promise((resolve) => upstream.close(resolve));
   await prisma.$disconnect();
+  await closeConnectionPools();
 });
 
 let app: ReturnType<typeof createApp>;

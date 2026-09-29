@@ -53,6 +53,9 @@ importers:
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
+      bullmq:
+        specifier: ^5
+        version: 5.81.5
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -202,6 +205,9 @@ importers:
       '@tracelayer/db':
         specifier: workspace:^
         version: link:../../packages/db
+      '@tracelayer/executor':
+        specifier: workspace:^
+        version: link:../../packages/executor
       '@tracelayer/shared':
         specifier: workspace:^
         version: link:../../packages/shared
@@ -224,6 +230,9 @@ importers:
       '@types/jest':
         specifier: ^30
         version: 30.0.0
+      '@types/node':
+        specifier: ^20
+        version: 20.19.43
       jest:
         specifier: ^30
         version: 30.5.2(@types/node@20.19.43)

@@ -70,6 +70,8 @@ carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `
 | `POST /projects`               | 30 per hour, per user             |
 | `POST /endpoints`              | 100 per hour, per user            |
 | `POST /requests/execute`       | 60 per minute, per user           |
+| `POST /monitors`               | 60 per hour, per user             |
+| `POST /monitors/:id/run`       | 30 per minute, per user           |
 
 ## Health
 
@@ -521,3 +523,88 @@ Each entry has `id`, `method`, `url` (secrets masked), `status` (or `null` with 
 `errorMessage`), `durationMs`, `sizeBytes`, `createdAt`, and `endpoint`, `environment` and
 `user` (each `{ id, name }` or `null`). Response bodies are never stored. The newest 5,000 entries
 per project are kept.
+
+## Monitors
+
+Require `Authorization: Bearer <access token>`. Every workspace member can read. Owners, admins
+and members (`monitoring.manage`) can create, change, delete and run monitors. Anyone outside the
+workspace, and any malformed id, gets `404` ("Monitor not found").
+
+A **monitor**:
+
+```json
+{
+  "id": "d1c6…",
+  "projectId": "3f1c…",
+  "name": "Production health",
+  "endpointId": "5b0d…",
+  "environmentId": "9a0e…",
+  "type": "RESPONSE_VALIDATION",
+  "intervalSeconds": 60,
+  "timeoutMs": 4000,
+  "expectedStatus": 200,
+  "latencyThresholdMs": null,
+  "assertions": [{ "path": "status", "operator": "equals", "value": "healthy" }],
+  "enabled": true,
+  "endpoint": { "id": "5b0d…", "name": "Health", "method": "GET", "url": "/health" },
+  "environment": { "id": "9a0e…", "name": "Production" },
+  "lastRunAt": "2026-09-30T18:33:47.120Z",
+  "lastRunSuccess": true,
+  "consecutiveFailures": 0,
+  "createdBy": { "id": "ae2e…", "name": "Ada Lovelace" },
+  "createdAt": "…",
+  "updatedAt": "…"
+}
+```
+
+| Method | Path                        | Required role          | Result                                 |
+| ------ | --------------------------- | ---------------------- | -------------------------------------- |
+| GET    | `/api/monitors?projectId=…` | any member             | `200`, monitors by name                |
+| POST   | `/api/monitors`             | owner, admin or member | `201`, the monitor (scheduled at once) |
+| GET    | `/api/monitors/:id`         | any member             | `200`, the monitor                     |
+| PATCH  | `/api/monitors/:id`         | owner, admin or member | `200`, the monitor (rescheduled)       |
+| DELETE | `/api/monitors/:id`         | owner, admin or member | `204`; runs are deleted too            |
+| POST   | `/api/monitors/:id/run`     | owner, admin or member | `202 { "queued": true }`               |
+| GET    | `/api/monitors/:id/runs`    | any member             | `200`, runs newest first               |
+
+**Create** takes `projectId`, `name`, `endpointId`, `environmentId` and `type`. The optional
+fields have these defaults: `intervalSeconds` 300, `timeoutMs` the endpoint's timeout,
+`expectedStatus` `null`, `latencyThresholdMs` `null`, `assertions` `[]` and `enabled` `true`.
+**Update** takes any subset of the fields. It is merged into the stored monitor, and the whole
+result must be valid.
+
+| Field                         | Rules                                                                                                                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                        | 1–100 characters, unique in the project ignoring case (`409`)                                                                                                                                                                                                       |
+| `endpointId`, `environmentId` | must belong to the project (`404`), and the endpoint's request must be buildable in that environment (`400` on `environmentId`, with the reason)                                                                                                                    |
+| `type`                        | `AVAILABILITY`, `STATUS`, `PERFORMANCE` or `RESPONSE_VALIDATION`                                                                                                                                                                                                    |
+| `intervalSeconds`             | one of 60, 300, 600, 900, 1800, 3600                                                                                                                                                                                                                                |
+| `timeoutMs`                   | 1000–30000                                                                                                                                                                                                                                                          |
+| `expectedStatus`              | 100–599, or `null` (the endpoint's expected status, else any 2xx)                                                                                                                                                                                                   |
+| `latencyThresholdMs`          | required for `PERFORMANCE`: 50–30000 and lower than `timeoutMs`                                                                                                                                                                                                     |
+| `assertions`                  | required (at least 1, at most 10) for `RESPONSE_VALIDATION`: `{ path, operator, value? }`; `path` is a dot path; `operator` is `equals`, `notEquals`, `exists`, `notExists` or `contains`; `value` is any JSON value (required except for `exists` and `notExists`) |
+
+- A project holds at most **50** monitors (`409`).
+- **Run now** queues a check for the worker and returns at once. If the queue is unavailable
+  the response is `502 UPSTREAM_ERROR`. The run appears in `/runs` when it finishes.
+
+**Runs** take `limit` (1–100, default 25) and `before` (an ISO date-time cursor: runs that
+started before it). Each run looks like:
+
+```json
+{
+  "id": "…",
+  "monitorId": "d1c6…",
+  "startedAt": "2026-09-30T18:33:48.012Z",
+  "success": false,
+  "statusCode": 500,
+  "durationMs": 917,
+  "sizeBytes": 0,
+  "timedOut": false,
+  "failureReason": "UNEXPECTED_STATUS",
+  "failureMessage": "Expected 200, received 500"
+}
+```
+
+`statusCode`, `durationMs` and `sizeBytes` are `null` when no response arrived, for example with
+`TIMEOUT`, `BLOCKED_TARGET` or `CONFIG_ERROR`. Runs are kept for 30 days.

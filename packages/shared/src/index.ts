@@ -5,3 +5,4 @@ export * from './workspace';
 export * from './project';
 export * from './endpoint';
 export * from './request';
+export * from './monitor';

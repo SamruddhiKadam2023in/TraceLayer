@@ -4,8 +4,8 @@ TraceLayer is a pnpm monorepo with three runnable apps (frontend, backend, worke
 packages (database client, shared types). PostgreSQL is the system of record; Redis carries the job
 queue, the worker heartbeat, rate-limit counters and, later, real-time fan-out.
 
-> **Status:** this document covers Phases 1–6 (foundation, authentication, workspaces, projects, endpoints, request
-> execution). Sections marked _(planned)_ describe
+> **Status:** this document covers Phases 1–7 (foundation, authentication, workspaces, projects, endpoints, request
+> execution, monitoring). Sections marked _(planned)_ describe
 > the target design from [SPEC.md](SPEC.md) and are filled in by the phase noted.
 
 ## System diagram
@@ -83,7 +83,8 @@ docker-compose.yml
 - Signed-in routes also sit behind `RequireWorkspace`, which loads the user's workspaces and
   guarantees a current one. Users with none see the "create your first workspace" screen.
 - Screens so far: sign-in, sign-up, first-workspace onboarding, **Projects** (list and create),
-  a **project page** with Overview, Endpoints, History, Environments and Settings tabs, the **endpoint
+  a **project page** with Overview, Endpoints, Monitors, History, Environments and Settings
+  tabs, the **endpoint
   editor**, **System Status** (the live
   `/api/health` report) and **Workspace settings** (rename, members, leave, delete). The top
   bar holds the workspace switcher. Sidebar entries are added as each feature is built, so there
@@ -171,7 +172,8 @@ Both shapes are defined once in `@tracelayer/shared` and used by the backend and
 - Models are added phase by phase, each with its own migration. Current tables: `users`,
   `refresh_tokens`, `workspaces`, `workspace_members` (role is the Postgres enum
   `workspace_role`), `projects`, `environments`, `environment_variables`, `endpoints` (method
-  is the enum `http_method`) and `request_history`. Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
+  is the enum `http_method`), `request_history`, `monitors` (type is the enum `monitor_type`) and
+  `monitor_runs`. Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
   timestamps are `timestamptz`.
 - The backend container runs `prisma migrate deploy` before starting, so a fresh
   `docker compose up` always has an up-to-date schema. The worker waits for the backend to
@@ -466,6 +468,87 @@ view and copy), response headers, and the request as actually sent (secrets mask
 viewer is a small built-in tokenizer rather than Monaco, which would add several megabytes for
 read-only display. The History tab keeps its filters in the URL, so a filtered view can be
 shared.
+
+## Monitoring engine
+
+A **monitor** runs one endpoint in one environment on a schedule and records every result.
+Owners, admins and members manage monitors (`monitoring.manage`); viewers can read them.
+
+```text
+ API (save monitor) ──▶ monitors table ◀──────────── reconcile (every 5 min + on start)
+        │                                                   │
+        └─▶ BullMQ job scheduler "monitor:<id>" ◀───────────┘
+                     │ every N seconds (Redis)
+                     ▼
+              queue "monitor-checks" ──▶ worker ──▶ executor (SSRF-safe HTTP)
+                                            │
+                                            ├─▶ evaluate (monitor type)
+                                            └─▶ monitor_runs + monitor's cached last result
+```
+
+**Types** (the evaluation logic is `evaluateCheck` in `packages/shared/src/monitor.ts`, a pure,
+deterministic function):
+
+| Type                | Passes when                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| Availability        | A response arrives with a status below 500                                            |
+| Status              | The status equals the expected one (the monitor's, else the endpoint's, else any 2xx) |
+| Performance         | The status check passes **and** the duration is at most the threshold                 |
+| Response validation | The status check passes **and** every JSON check holds                                |
+
+JSON checks use dot paths (`data.items.0.id`) with `equals`, `notEquals`, `exists`,
+`notExists` or `contains`. Values are compared as JSON, deeply for objects and arrays. A failed
+check stores a `failureReason` (`UNEXPECTED_STATUS`, `SERVER_ERROR`, `LATENCY_EXCEEDED`,
+`ASSERTION_FAILED`, `CONFIG_ERROR`, or the network codes `TIMEOUT`, `BLOCKED_TARGET`, …) and a
+human-readable `failureMessage`, such as "Expected 200, received 500".
+
+**Scheduling: Redis and BullMQ, no `setInterval`.**
+
+- Each enabled monitor has one BullMQ _job scheduler_ (`monitor:<id>`, repeating every
+  `intervalSeconds`: 1, 5, 10, 15, 30 or 60 minutes). It lives in Redis, so it survives worker
+  restarts, and several workers can share the queue.
+- The API creates, updates or removes a monitor's scheduler whenever the monitor is saved,
+  paused or deleted. It also removes the schedulers of monitors deleted by cascade (their
+  endpoint, project or workspace was deleted).
+- The **monitors table is the source of truth.** On start and every 5 minutes the worker
+  reconciles BullMQ against it: missing schedulers are added (for example after a save while
+  Redis was down), intervals that drifted are fixed, and schedulers without an enabled monitor
+  are removed. Reconciling is idempotent.
+- A job carries only `{ monitorId }`. The worker loads the _current_ configuration when the job
+  runs, so edits apply from the next run on. A job for a deleted monitor is skipped, and so is a
+  scheduled job for a paused one. **Run now** queues a one-off job marked `manual`, which runs
+  even when the monitor is paused.
+- Checks are never retried (`attempts: 1`): a failure is a result to record, not a job to redo.
+
+**The worker** (`apps/worker`, spec §19):
+
+1. Receives the job and loads the monitor, endpoint and environment.
+2. Decrypts secret variables, using the same `SecretBox` code and `ENCRYPTION_KEY` as the API.
+3. Builds the request with the monitor's own timeout.
+4. Runs it through `@tracelayer/executor`: SSRF protection, the secret-origin rule, limits, and
+   timing, status, size, timeout and connection-failure detection. This is the same code as
+   the request builder.
+5. Evaluates the result for the monitor type.
+6. Stores a `monitor_runs` row and updates the monitor's cached `lastRunAt`, `lastRunSuccess`
+   and `consecutiveFailures` in one transaction. The failure counter uses an atomic increment.
+
+Alert rules, incidents and real-time updates (§19 steps 13–15) plug in after step 6 in
+Phases 10–12.
+
+**Configuration errors surface early.** When a monitor is saved, the API test-prepares its
+request (variables defined, base URL set, secrets allowed) and refuses the save with the reason.
+If the setup breaks later (the endpoint changed, or the environment was deleted), each run is
+recorded as `CONFIG_ERROR` with the reason, and nothing is sent.
+
+**Data.** `monitor_runs` stores everything spec §20 lists: timestamp, status code, response
+time, response size, success, failure reason, timeout, and the monitor, endpoint and environment
+ids (copied onto the run, so metrics need no joins). It is indexed by
+`(monitor_id, started_at DESC)` and `(project_id, started_at DESC)` for the time-series queries
+of Phases 8–9. A daily maintenance job (03:17 UTC) deletes runs older than **30 days**.
+
+**Limits.** Up to 50 monitors per project, intervals of at least 1 minute, and timeouts of at
+most 30 s. Creating monitors is rate-limited to 60 per hour per user, and manual runs to 30 per
+minute per user.
 
 ## Configuration
 
