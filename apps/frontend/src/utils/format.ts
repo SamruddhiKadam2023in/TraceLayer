@@ -46,3 +46,8 @@ export function formatRelative(iso: string, now = Date.now()): string {
   if (seconds < 86_400) return `${Math.round(seconds / 3600)} h ago`;
   return formatDate(iso);
 }
+
+/** "99.82%", or an em dash when there is no data (never a made-up 100%). */
+export function formatPercent(value: number | null): string {
+  return value === null ? '—' : `${value.toFixed(2)}%`;
+}

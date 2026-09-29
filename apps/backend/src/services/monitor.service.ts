@@ -6,6 +6,7 @@ import {
   MAX_MONITORS_PER_PROJECT,
   monitorConfigSchema,
   type FailureReason,
+  type HealthStatus,
   type MonitorConfig,
   type MonitorRunView,
   type MonitorView,
@@ -17,6 +18,7 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../utils/errors';
 import { compareNames } from '../utils/sort';
 import type { MonitorAccess, ProjectAccess } from './access.service';
+import { healthByMonitor } from './metrics.service';
 import { loadResolvedEnvironment } from './resolved-environment.service';
 
 const monitorInclude = {
@@ -27,7 +29,7 @@ const monitorInclude = {
 
 type MonitorRow = Prisma.MonitorGetPayload<{ include: typeof monitorInclude }>;
 
-function toView(row: MonitorRow): MonitorView {
+function toView(row: MonitorRow, health: HealthStatus): MonitorView {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -47,10 +49,16 @@ function toView(row: MonitorRow): MonitorView {
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     lastRunSuccess: row.lastRunSuccess,
     consecutiveFailures: row.consecutiveFailures,
+    health,
     createdBy: row.createdBy,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+async function withHealth(row: MonitorRow): Promise<MonitorView> {
+  const health = await healthByMonitor([row.id]);
+  return toView(row, health.get(row.id) ?? 'NO_DATA');
 }
 
 function toColumns(config: MonitorConfig) {
@@ -132,7 +140,10 @@ export async function listMonitors(access: ProjectAccess): Promise<MonitorView[]
     where: { projectId: access.projectId },
     include: monitorInclude,
   });
-  return rows.map(toView).sort((a, b) => compareNames(a.name, b.name));
+  const health = await healthByMonitor(rows.map((r) => r.id));
+  return rows
+    .map((row) => toView(row, health.get(row.id) ?? 'NO_DATA'))
+    .sort((a, b) => compareNames(a.name, b.name));
 }
 
 export interface CreateMonitorData extends Omit<MonitorConfig, 'timeoutMs'> {
@@ -167,7 +178,7 @@ export async function createMonitor(
   });
 
   await syncMonitorSchedule(row);
-  return toView(row);
+  return withHealth(row);
 }
 
 export async function getMonitor(access: MonitorAccess): Promise<MonitorView> {
@@ -175,7 +186,7 @@ export async function getMonitor(access: MonitorAccess): Promise<MonitorView> {
     where: { id: access.monitorId },
     include: monitorInclude,
   });
-  return toView(row);
+  return withHealth(row);
 }
 
 /** Partial update, merged into the stored monitor and validated as a whole. */
@@ -206,7 +217,7 @@ export async function updateMonitor(
   });
 
   await syncMonitorSchedule(row);
-  return toView(row);
+  return withHealth(row);
 }
 
 export async function deleteMonitor(access: MonitorAccess): Promise<void> {

@@ -3,7 +3,7 @@ import { Plus, Radar } from 'lucide-react';
 import { hasPermission, MAX_MONITORS_PER_PROJECT, MONITOR_TYPE_INFO } from '@tracelayer/shared';
 import { EmptyState, LoadError } from '@/components/EmptyState';
 import { MethodBadge } from '@/components/endpoints/MethodBadge';
-import { RunStatus } from '@/components/monitors/RunStatus';
+import { HealthBadge } from '@/components/monitors/HealthBadge';
 import { useProject } from '@/hooks/useProject';
 import { useQuery } from '@/hooks/useQuery';
 import { fetchMonitors } from '@/services/monitor.service';
@@ -84,7 +84,7 @@ export function ProjectMonitorsPage() {
                 {monitor.lastRunAt ? formatRelative(monitor.lastRunAt) : '—'}
               </p>
               <div className="w-24 text-right">
-                <RunStatus success={monitor.lastRunSuccess} paused={!monitor.enabled} />
+                <HealthBadge health={monitor.health} paused={!monitor.enabled} />
               </div>
             </Link>
           </li>

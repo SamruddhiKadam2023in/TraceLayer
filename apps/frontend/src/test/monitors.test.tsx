@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   EndpointView,
   EnvironmentView,
+  MetricsSummary,
   MonitorRunView,
   MonitorView,
   ProjectView,
@@ -84,6 +85,7 @@ function monitor(overrides: Partial<MonitorView> = {}): MonitorView {
     lastRunAt: new Date(Date.now() - 120_000).toISOString(),
     lastRunSuccess: true,
     consecutiveFailures: 0,
+    health: 'HEALTHY',
     createdBy: null,
     createdAt: '2026-09-29T10:00:00.000Z',
     updatedAt: '2026-09-29T10:00:00.000Z',
@@ -107,6 +109,15 @@ function run(id: string, overrides: Partial<MonitorRunView> = {}): MonitorRunVie
   };
 }
 
+const SUMMARY: MetricsSummary = {
+  range: '24h',
+  from: '2026-09-29T10:00:00.000Z',
+  to: '2026-09-30T10:00:00.000Z',
+  totals: { total: 1440, successful: 1437, failed: 3, uptime: 99.79, errorRate: 0.21 },
+  latency: { avg: 184, min: 90, max: 1210, p50: 170, p95: 641, p99: 1200 },
+  statusCodes: { '2xx': 1437, '3xx': 0, '4xx': 1, '5xx': 1, noResponse: 1 },
+};
+
 function api(role: WorkspaceRole, extra: Record<string, Handler | FakeResponse> = {}) {
   return installFakeApi({
     'POST /auth/refresh': [200, ok(makeSession())],
@@ -124,6 +135,7 @@ function api(role: WorkspaceRole, extra: Record<string, Handler | FakeResponse> 
           enabled: false,
           lastRunAt: null,
           lastRunSuccess: null,
+          health: 'NO_DATA',
         }),
       ]),
     ],
@@ -140,6 +152,7 @@ function api(role: WorkspaceRole, extra: Record<string, Handler | FakeResponse> 
         }),
       ]),
     ],
+    'GET /metrics/summary': [200, ok(SUMMARY)],
     ...extra,
   });
 }
@@ -158,7 +171,7 @@ describe('monitor list', () => {
     const list = await screen.findByRole('list', { name: 'Monitors' });
     const [first, second] = within(list).getAllByRole('listitem');
     expect(within(first!).getByText('Production health')).toBeInTheDocument();
-    expect(within(first!).getByText('Up')).toBeInTheDocument();
+    expect(within(first!).getByText('Healthy')).toBeInTheDocument();
     expect(within(first!).getByText(/Status · every 5 min/)).toBeInTheDocument();
     expect(within(first!).getByText('2 min ago')).toBeInTheDocument();
     expect(within(second!).getByText('Paused')).toBeInTheDocument();
@@ -275,6 +288,53 @@ describe('monitor detail', () => {
     expect(fake.callsTo('PATCH', '/monitors/mon-1')[0]?.body).toEqual({ enabled: false });
     expect(await screen.findByRole('button', { name: 'Resume' })).toBeInTheDocument();
     expect(screen.getByText('Paused')).toBeInTheDocument();
+  });
+});
+
+describe('monitor metrics', () => {
+  it('shows uptime, latency percentiles and status codes, and refetches for another range', async () => {
+    const fake = api('VIEWER');
+    renderApp('/projects/proj-1/monitors/mon-1');
+
+    const metrics = await screen.findByRole('region', { name: /Metrics/ });
+    expect(await within(metrics).findByText('99.79%')).toBeInTheDocument();
+    expect(within(metrics).getByText('641ms')).toBeInTheDocument(); // P95
+    expect(within(metrics).getByText('1.20s')).toBeInTheDocument(); // P99
+    expect(within(metrics).getByText('3 failed')).toBeInTheDocument();
+    const codes = within(metrics).getByRole('list', { name: 'Status code distribution' });
+    expect(within(codes).getByText('1437')).toBeInTheDocument();
+
+    expect(fake.callsTo('GET', '/metrics/summary')[0]?.params).toEqual({
+      projectId: 'proj-1',
+      monitorId: 'mon-1',
+      range: '24h',
+    });
+    await userEvent.click(within(metrics).getByRole('radio', { name: '7d' }));
+    expect(within(metrics).getByRole('radio', { name: '7d' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    expect(fake.callsTo('GET', '/metrics/summary').at(-1)?.params).toMatchObject({ range: '7d' });
+  });
+
+  it('shows a dash, not a made-up number, when there is no data', async () => {
+    api('VIEWER', {
+      'GET /metrics/summary': [
+        200,
+        ok({
+          ...SUMMARY,
+          totals: { total: 0, successful: 0, failed: 0, uptime: null, errorRate: null },
+          latency: { avg: null, min: null, max: null, p50: null, p95: null, p99: null },
+          statusCodes: { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, noResponse: 0 },
+        }),
+      ],
+    });
+    renderApp('/projects/proj-1/monitors/mon-1');
+
+    const metrics = await screen.findByRole('region', { name: /Metrics/ });
+    expect(await within(metrics).findByText('No runs in this period.')).toBeInTheDocument();
+    const uptime = within(metrics).getByText('Uptime').parentElement!;
+    expect(within(uptime).getByText('—')).toBeInTheDocument();
   });
 });
 

@@ -72,6 +72,7 @@ carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `
 | `POST /requests/execute`       | 60 per minute, per user           |
 | `POST /monitors`               | 60 per hour, per user             |
 | `POST /monitors/:id/run`       | 30 per minute, per user           |
+| `GET /metrics…`                | 120 per minute, per user          |
 
 ## Health
 
@@ -608,3 +609,83 @@ started before it). Each run looks like:
 
 `statusCode`, `durationMs` and `sizeBytes` are `null` when no response arrived, for example with
 `TIMEOUT`, `BLOCKED_TARGET` or `CONFIG_ERROR`. Runs are kept for 30 days.
+
+## Metrics
+
+Readable by every member of the project's workspace. Every metrics endpoint accepts the same
+query parameters:
+
+| Query parameter                            | Meaning                                                 |
+| ------------------------------------------ | ------------------------------------------------------- |
+| `projectId` (required)                     | The project                                             |
+| `range`                                    | `1h`, `6h`, `24h` (default), `7d` or `30d`, ending now  |
+| `monitorId`, `endpointId`, `environmentId` | Optional filters (a monitor of another project → `404`) |
+
+Rate limit: 120 requests per minute, per user.
+
+Metrics are computed from monitor runs. **Latency statistics use only runs that received a
+response**; timeouts and connection errors count as failures. Values with no underlying data
+are `null`, never 0.
+
+### `GET /api/metrics/summary`
+
+```json
+{
+  "range": "24h",
+  "from": "2026-09-29T19:00:00.000Z",
+  "to": "2026-09-30T19:00:00.000Z",
+  "totals": { "total": 1440, "successful": 1437, "failed": 3, "uptime": 99.79, "errorRate": 0.21 },
+  "latency": { "avg": 184, "min": 90, "max": 1210, "p50": 170, "p95": 641, "p99": 1200 },
+  "statusCodes": { "2xx": 1437, "3xx": 0, "4xx": 1, "5xx": 1, "noResponse": 1 }
+}
+```
+
+`uptime` and `errorRate` are percentages with two decimals. Latencies are milliseconds, and
+percentiles use linear interpolation (`percentile_cont`).
+
+### `GET /api/metrics/latency` and `GET /api/metrics/errors`
+
+Time series with one point per bucket, including empty buckets. The bucket size depends on the
+range: 1 min, 5 min, 15 min, 1 h or 6 h.
+
+```json
+{
+  "range": "1h",
+  "from": "…",
+  "to": "…",
+  "bucketMs": 60000,
+  "points": [{ "t": "2026-09-30T18:00:00.000Z", "avg": 182, "p50": 170, "p95": 402, "p99": 450 }]
+}
+```
+
+The errors series has points of the form
+`{ "t", "total", "failed", "errorRate" }`, where `total` is the request volume. In an empty
+bucket, `total` is `0` and `errorRate` and the latency values are `null`.
+
+### `GET /api/metrics`
+
+One row per monitor in the project (after filters), plus a count per health state:
+
+```json
+{
+  "range": "24h",
+  "from": "…",
+  "to": "…",
+  "monitors": [
+    {
+      "monitor": { "id": "…", "name": "Production health", "enabled": true },
+      "endpoint": { "id": "…", "name": "Health", "method": "GET" },
+      "environment": { "id": "…", "name": "Production" },
+      "health": "DEGRADED",
+      "totals": { "total": 96, "successful": 95, "failed": 1, "uptime": 98.96, "errorRate": 1.04 },
+      "latency": { "avg": 188, "p95": 640 }
+    }
+  ],
+  "health": { "HEALTHY": 3, "DEGRADED": 1, "FAILING": 0, "NO_DATA": 1 }
+}
+```
+
+`health` is computed from the monitor's latest 10 runs, whatever `range` is. It is `FAILING`
+when the last 3 runs failed or half the runs failed, `DEGRADED` when any run failed, and
+`HEALTHY` otherwise; `NO_DATA` means the monitor has never run. The same `health` field
+appears on every monitor returned by `/api/monitors`.

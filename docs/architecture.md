@@ -4,8 +4,8 @@ TraceLayer is a pnpm monorepo with three runnable apps (frontend, backend, worke
 packages (database client, shared types). PostgreSQL is the system of record; Redis carries the job
 queue, the worker heartbeat, rate-limit counters and, later, real-time fan-out.
 
-> **Status:** this document covers Phases 1–7 (foundation, authentication, workspaces, projects, endpoints, request
-> execution, monitoring). Sections marked _(planned)_ describe
+> **Status:** this document covers Phases 1–8 (foundation, authentication, workspaces, projects, endpoints, request
+> execution, monitoring, metrics). Sections marked _(planned)_ describe
 > the target design from [SPEC.md](SPEC.md) and are filled in by the phase noted.
 
 ## System diagram
@@ -549,6 +549,61 @@ of Phases 8–9. A daily maintenance job (03:17 UTC) deletes runs older than **3
 **Limits.** Up to 50 monitors per project, intervals of at least 1 minute, and timeouts of at
 most 30 s. Creating monitors is rate-limited to 60 per hour per user, and manual runs to 30 per
 minute per user.
+
+## Metrics and health
+
+Every number comes from `monitor_runs` at query time. There are no counters or cached
+aggregates that could drift from the raw data. The calculations run in PostgreSQL
+(`apps/backend/src/services/metrics.service.ts`), so they cost the same whether a window holds
+ten runs or forty thousand.
+
+| Metric                      | Definition                                                                                                             |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Total / successful / failed | Runs in the window, by the run's `success` (its monitor type's verdict)                                                |
+| Uptime                      | `successful / total × 100`, two decimals; **null** when there were no runs                                             |
+| Error rate                  | `failed / total × 100`; null when there were no runs                                                                   |
+| Avg / min / max latency     | Over runs **that received a response**                                                                                 |
+| P50 / P95 / P99             | `percentile_cont` over the same runs (linear interpolation between ranks)                                              |
+| Status distribution         | Runs by 2xx / 3xx / 4xx / 5xx, plus _no response_ (timeouts, connection errors, blocked targets, configuration errors) |
+
+**Why latency excludes timeouts.** A timed-out run's duration is just the timeout. Including it
+would put the timeout value into the percentiles. For example, one 5 s timeout among responses
+around 300 ms turns a 301 ms average into 889 ms, a case the tests cover. Timeouts still count
+fully in uptime, error rate and the status distribution.
+
+**No fake numbers.** With no runs, uptime, error rate and latency are `null` (shown as "—"),
+never 0 % or 100 %.
+
+**Time ranges and buckets.** Series cover fixed windows ending now:
+
+| Range | Bucket | Points |
+| ----- | ------ | ------ |
+| 1h    | 1 min  | ~60    |
+| 6h    | 5 min  | ~72    |
+| 24h   | 15 min | ~96    |
+| 7d    | 1 h    | ~168   |
+| 30d   | 6 h    | ~120   |
+
+Buckets are aligned with `date_bin`, and every bucket in the window is returned (built with
+`generate_series`, left-joined with runs). An empty bucket has volume 0 and latency `null`, so
+charts show a gap instead of joining the points either side of it.
+
+**Filters.** Every metrics endpoint is scoped to one project the caller can read, and can be
+narrowed to a monitor, endpoint or environment. The queries use the
+`(project_id, started_at DESC)` and `(monitor_id, started_at DESC)` indexes on `monitor_runs`.
+
+**Health status (spec §24)** is computed, never set by hand. `computeHealth` in
+`packages/shared/src/metrics.ts` looks at a monitor's **latest 10 runs**:
+
+- **Failing:** the 3 most recent runs all failed, or at least half of the 10 failed.
+- **Degraded:** any other failure among the 10 (intermittent problems).
+- **Healthy:** none of the 10 failed.
+- **No data:** the monitor has not run yet.
+
+The latest runs for a whole list of monitors are fetched in one query (`row_number()` per
+monitor). The same function drives the badges in the UI, `health` on every monitor, and the
+health counts in `GET /api/metrics`. The UI shows health with an icon and a word
+(Healthy ✓, Degraded !, Failing ×), not by colour alone.
 
 ## Configuration
 

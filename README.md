@@ -4,12 +4,13 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 7 of 20 (Monitor engine) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 8 of 20 (Metrics) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
 > and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
 > SSRF-protected request builder with a response viewer and searchable request history. Monitors
-> run endpoints on a schedule (Redis + BullMQ + a dedicated worker) and record every result.
+> run endpoints on a schedule (Redis + BullMQ + a dedicated worker) and record every result;
+> uptime, error rate, latency percentiles and health are computed from those runs.
 > Product features are added phase by
 > phase following the [master specification](docs/SPEC.md). Sections below marked _(planned)_
 > describe features that do not exist yet.
@@ -46,7 +47,8 @@ monitoring and investigation tool, not a Postman clone.
 | API endpoints: method, URL, headers, params, body, auth, timeout, tags   | ✅ Phase 5                |
 | Request builder with response viewer and request history, SSRF-protected | ✅ Phase 6                |
 | Scheduled monitors (availability, status, performance, validation)       | ✅ Phase 7                |
-| Metrics and analytics dashboards                                         | _(planned, Phases 8–9)_   |
+| Metrics: uptime, error rate, P50/P95/P99, status codes, health           | ✅ Phase 8                |
+| Analytics dashboard and charts                                           | _(planned, Phase 9)_      |
 | Alert rules, incidents and incident timelines                            | _(planned, Phases 10–11)_ |
 | Real-time dashboard updates                                              | _(planned, Phase 12)_     |
 | API dependency map                                                       | _(planned, Phase 13)_     |
@@ -170,7 +172,11 @@ Current coverage:
   Endpoints: CRUD, filters, per-role access, and every configuration rule (credential
   references, URL forms, JSON with variables, no body on GET/HEAD, validation of the merged
   result on partial updates). Request execution: variables and secrets resolved server side,
-  the secret-origin rule, masking, history filters, sorting and pagination.
+  the secret-origin rule, masking, history filters, sorting and pagination. Monitors: CRUD,
+  validation per type, scheduling calls, unscheduling on cascading deletes, run history and
+  access. Metrics: totals, uptime, error rate, exact P50/P95/P99 against hand-computed values,
+  latency excluding timeouts, status distribution, gap-filled time series, filters, and the
+  health rules.
 - **Executor (Jest):** SSRF address and hostname rules (including IPv4-mapped IPv6, NAT64 and
   hex/decimal IPv4 tricks), request preparation, and real HTTP execution against local servers:
   timeouts, gzip, size caps, binary bodies, redirects and credential handling.
@@ -187,7 +193,8 @@ Current coverage:
   navigation) and read-only access for viewers; sending requests, the response viewer (pretty and
   raw JSON, headers, the sent request), error states, and the history table with URL-backed
   filters, sorting and paging; the monitor list, creating each monitor type (including JSON
-  checks), run history, run now and pause/resume.
+  checks), run history, run now and pause/resume; health badges and the metrics panel (range
+  switching, "—" when there is no data).
 
 End-to-end tests with Playwright arrive in Phase 15, and a GitHub Actions pipeline running all of
 the above in Phase 16.
@@ -216,6 +223,7 @@ All endpoints live under `/api` and return one of two shapes:
 | POST   | `/api/requests/execute` | Bearer token   | Send a request (SSRF-protected)                                    |
 | GET    | `/api/requests/history` | Bearer token   | Request history with filters and paging                            |
 | —      | `/api/monitors/…`       | Bearer token   | Monitors, run now and run history (see the API reference)          |
+| GET    | `/api/metrics…`         | Bearer token   | Metrics summary, per-monitor overview, latency and error series    |
 
 Request and response details for every endpoint: [docs/api.md](docs/api.md).
 

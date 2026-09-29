@@ -14,7 +14,8 @@ import { EmptyState, LoadError } from '@/components/EmptyState';
 import { MethodBadge } from '@/components/endpoints/MethodBadge';
 import { MonitorForm } from '@/components/monitors/MonitorForm';
 import { toFormValues } from '@/components/monitors/monitor-form-schema';
-import { RunStatus } from '@/components/monitors/RunStatus';
+import { HealthBadge } from '@/components/monitors/HealthBadge';
+import { MetricsPanel } from '@/components/metrics/MetricsPanel';
 import { formatBytes } from '@/components/requests/status';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useProject } from '@/hooks/useProject';
@@ -324,7 +325,7 @@ export function MonitorDetailPage() {
         <BackLink />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h2 className="min-w-0 truncate text-base font-semibold">{current.name}</h2>
-          <RunStatus success={current.lastRunSuccess} paused={!current.enabled} />
+          <HealthBadge health={current.health} paused={!current.enabled} />
           {current.consecutiveFailures > 1 && (
             <span className="text-xs text-fail">
               {current.consecutiveFailures} failures in a row
@@ -376,6 +377,7 @@ export function MonitorDetailPage() {
 
       {actionError && <ErrorAlert>{actionError}</ErrorAlert>}
       <Summary monitor={current} />
+      <MetricsPanel scope={{ projectId: project.id, monitorId: current.id }} />
 
       <section aria-labelledby="runs-heading" className="flex flex-col gap-2">
         <h3 id="runs-heading" className="text-sm font-semibold">

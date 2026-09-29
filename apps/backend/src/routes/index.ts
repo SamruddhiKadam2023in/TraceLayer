@@ -6,6 +6,7 @@ import { createProjectRouter } from './project.routes';
 import { createEndpointRouter } from './endpoint.routes';
 import { createRequestRouter } from './request.routes';
 import { createMonitorRouter } from './monitor.routes';
+import { createMetricsRouter } from './metrics.routes';
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -16,5 +17,6 @@ export function createApiRouter(): Router {
   router.use('/endpoints', createEndpointRouter());
   router.use('/requests', createRequestRouter());
   router.use('/monitors', createMonitorRouter());
+  router.use('/metrics', createMetricsRouter());
   return router;
 }

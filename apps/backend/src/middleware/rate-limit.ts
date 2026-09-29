@@ -152,6 +152,19 @@ export function createMonitorRateLimiters() {
   };
 }
 
+export function createMetricsRateLimiters() {
+  return {
+    // Generous for dashboards that load several series at once, but bounded.
+    metrics: createLimiter({
+      name: 'metrics',
+      windowMs: MINUTE_MS,
+      limit: 120,
+      perUser: true,
+      message: 'Too many analytics requests. Wait a moment and try again.',
+    }),
+  };
+}
+
 export function createRequestRateLimiters() {
   return {
     // Each execution makes an outbound request, so this also caps use of the platform as a proxy.

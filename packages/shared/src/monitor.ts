@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { HttpMethod } from './constants';
 import { MAX_TIMEOUT_MS, MIN_TIMEOUT_MS } from './endpoint';
 import type { ExecutionResult } from './request';
+import type { HealthStatus } from './metrics';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -177,6 +178,8 @@ export interface MonitorView extends MonitorConfig {
   lastRunAt: string | null;
   lastRunSuccess: boolean | null;
   consecutiveFailures: number;
+  /** From the latest runs; see computeHealth. */
+  health: HealthStatus;
   createdBy: { id: string; name: string } | null;
   createdAt: string;
   updatedAt: string;
