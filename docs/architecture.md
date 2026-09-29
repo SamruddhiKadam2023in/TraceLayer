@@ -4,7 +4,7 @@ TraceLayer is a pnpm monorepo with three runnable apps (frontend, backend, worke
 packages (database client, shared types). PostgreSQL is the system of record; Redis carries the job
 queue, the worker heartbeat, rate-limit counters and, later, real-time fan-out.
 
-> **Status:** this document covers Phases 1–4 (foundation, authentication, workspaces, projects). Sections marked _(planned)_ describe
+> **Status:** this document covers Phases 1–5 (foundation, authentication, workspaces, projects, endpoints). Sections marked _(planned)_ describe
 > the target design from [SPEC.md](SPEC.md) and are filled in by the phase noted.
 
 ## System diagram
@@ -82,7 +82,8 @@ docker-compose.yml
 - Signed-in routes also sit behind `RequireWorkspace`, which loads the user's workspaces and
   guarantees a current one. Users with none see the "create your first workspace" screen.
 - Screens so far: sign-in, sign-up, first-workspace onboarding, **Projects** (list and create),
-  a **project page** with Overview, Environments and Settings tabs, **System Status** (the live
+  a **project page** with Overview, Endpoints, Environments and Settings tabs, the **endpoint
+  editor**, **System Status** (the live
   `/api/health` report) and **Workspace settings** (rename, members, leave, delete). The top
   bar holds the workspace switcher. Sidebar entries are added as each feature is built, so there
   are no placeholder pages.
@@ -168,7 +169,8 @@ Both shapes are defined once in `@tracelayer/shared` and used by the backend and
   client, published inside the monorepo as `@tracelayer/db` and shared by the backend and worker.
 - Models are added phase by phase, each with its own migration. Current tables: `users`,
   `refresh_tokens`, `workspaces`, `workspace_members` (role is the Postgres enum
-  `workspace_role`), `projects`, `environments` and `environment_variables`. Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
+  `workspace_role`), `projects`, `environments`, `environment_variables` and `endpoints` (method
+  is the enum `http_method`). Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
   timestamps are `timestamptz`.
 - The backend container runs `prisma migrate deploy` before starting, so a fresh
   `docker compose up` always has an up-to-date schema. The worker waits for the backend to
@@ -338,6 +340,49 @@ its tabs. Opening a project that belongs to another of the user's workspaces swi
 workspace. Switching workspace while viewing a project returns to the new workspace's project
 list. Tabs are added only when their feature exists: Endpoints, Monitors, Analytics, Incidents
 and Dependencies join in later phases.
+
+## Endpoints
+
+An endpoint is a saved API request belonging to a project (up to 200 per project, names unique
+per project ignoring case). Owners, admins **and members** manage endpoints
+(`monitoring.manage`); viewers can only read them.
+
+**Storage.** Scalar fields are columns (`name`, `method` as the `http_method` enum, `url`,
+`timeout_ms`, `expected_status`, `tags` as `varchar[]`). The structured parts (`headers`,
+`query_params`, `body`, `auth`) are JSONB, validated by the shared Zod schemas
+(`packages/shared/src/endpoint.ts`) on every write _and_ every read. A stored row that fails
+validation on read is reported as a 500 and logged. It is never sent to the client, and never
+blamed on the client with a 400.
+
+**Variables.** URL, header and parameter values, bodies and auth fields may reference
+environment variables as `{{NAME}}`. They are substituted when a request runs (Phase 6), with
+the environment chosen then. Each endpoint has an optional _default_ environment, cleared if that
+environment is deleted. A URL is either a path relative to the environment's base URL
+(`/orders/{{ID}}`), a URL that starts with a variable (`{{GATEWAY}}/orders`) or an absolute
+`http(s)` URL. Query strings go in `queryParams`, never in the URL. JSON bodies are syntax-checked
+with every `{{VAR}}` replaced by a placeholder, so `{"qty": {{QTY}}}` is accepted.
+
+**Credentials are never stored on endpoints.** Endpoint configuration is readable by every
+workspace member, so:
+
+- `auth` credential fields (bearer token, basic-auth password, API key value) must be exactly
+  one variable reference, e.g. `{{API_TOKEN}}`;
+- headers that carry credentials (`Authorization`, `Proxy-Authorization`, `Cookie`, `X-Api-Key`,
+  `Api-Key`, `X-Auth-Token`, `X-Access-Token`) must contain a variable reference.
+
+The actual values then live in secret environment variables: encrypted, write-only, and able to
+differ per environment (for example a staging token and a production token).
+
+**Cross-field rules.** GET and HEAD cannot have a body. A `PATCH` is merged into the stored
+configuration and the _complete_ result is validated, so a rule cannot be dodged by splitting the
+change across requests (e.g. adding a body, then switching the method to GET).
+
+**Frontend.** The editor (`components/endpoints/EndpointForm.tsx`) has a request line (method and
+URL, with the resolved URL for the default environment) and tabs for Params, Headers, Auth, Body
+and Settings. Tabs follow the WAI-ARIA pattern: arrow keys switch between them, and a tab
+containing errors is marked. A panel lists the variables the request uses and warns about any
+missing from the default environment. It works on unfinished input too. For viewers the whole
+form is a disabled `fieldset`.
 
 ## Configuration
 

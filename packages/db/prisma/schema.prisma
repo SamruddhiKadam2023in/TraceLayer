@@ -23,8 +23,9 @@ model User {
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   refreshTokens   RefreshToken[]
-  memberships     WorkspaceMember[]
-  createdProjects Project[]
+  memberships      WorkspaceMember[]
+  createdProjects  Project[]
+  createdEndpoints Endpoint[]
 
   @@map("users")
 }
@@ -109,6 +110,7 @@ model Project {
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdBy    User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
   environments Environment[]
+  endpoints    Endpoint[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -129,6 +131,7 @@ model Environment {
 
   project   Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   variables EnvironmentVariable[]
+  endpoints Endpoint[]
 
   @@unique([projectId, name])
   @@index([projectId])
@@ -151,4 +154,52 @@ model EnvironmentVariable {
 
   @@unique([environmentId, key])
   @@map("environment_variables")
+}
+
+// ─── Endpoints (Phase 5) ─────────────────────────────────────────────────────
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+  HEAD
+  OPTIONS
+
+  @@map("http_method")
+}
+
+/// A saved API request. Structured parts (headers, params, body, auth) are JSON validated by the
+/// shared Zod schemas on every write and read. Values may reference environment variables as
+/// {{NAME}}; credentials must (see endpointAuthSchema), so no secret is ever stored here.
+model Endpoint {
+  id             String     @id @default(uuid()) @db.Uuid
+  projectId      String     @map("project_id") @db.Uuid
+  /// Default environment to run against. Cleared if that environment is deleted.
+  environmentId  String?    @map("environment_id") @db.Uuid
+  name           String     @db.VarChar(100)
+  description    String?    @db.VarChar(500)
+  method         HttpMethod
+  url            String     @db.VarChar(2048)
+  headers        Json       @default("[]")
+  queryParams    Json       @default("[]") @map("query_params")
+  body           Json       @default("{\"type\":\"none\"}")
+  auth           Json       @default("{\"type\":\"none\"}")
+  timeoutMs      Int        @default(10000) @map("timeout_ms")
+  /// Status code counted as success; null means any 2xx.
+  expectedStatus Int?       @map("expected_status")
+  tags           String[]   @default([]) @db.VarChar(30)
+  createdById    String?    @map("created_by_id") @db.Uuid
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, name])
+  @@index([projectId])
+  @@index([environmentId])
+  @@map("endpoints")
 }

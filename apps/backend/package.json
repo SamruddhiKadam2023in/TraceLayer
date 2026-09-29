@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@tracelayer/db": "workspace:^",
+    "@tracelayer/executor": "workspace:^",
     "@tracelayer/shared": "workspace:^",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",

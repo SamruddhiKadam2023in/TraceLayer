@@ -66,3 +66,27 @@ export async function authorizeProject(
     throw err;
   }
 }
+
+export interface EndpointAccess extends ProjectAccess {
+  endpointId: string;
+}
+
+/** Checks `permission` in the workspace that owns the endpoint's project. */
+export async function authorizeEndpoint(
+  userId: string,
+  endpointId: string,
+  permission: Permission,
+): Promise<EndpointAccess> {
+  const endpoint = await prisma.endpoint.findUnique({
+    where: { id: endpointId },
+    select: { projectId: true },
+  });
+  if (!endpoint) throw AppError.notFound('Endpoint');
+  try {
+    const access = await authorizeProject(userId, endpoint.projectId, permission);
+    return { ...access, endpointId };
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'NOT_FOUND') throw AppError.notFound('Endpoint');
+    throw err;
+  }
+}

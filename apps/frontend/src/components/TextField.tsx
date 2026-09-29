@@ -2,12 +2,22 @@ import { useId, type ComponentProps } from 'react';
 
 interface TextFieldProps extends ComponentProps<'input'> {
   label: string;
+  /** Visually hide the label (it is still announced). */
+  hideLabel?: boolean;
   error?: string;
   hint?: string;
 }
 
 /** Labelled input whose error and hint are announced through aria-describedby. */
-export function TextField({ label, error, hint, id, className = '', ...props }: TextFieldProps) {
+export function TextField({
+  label,
+  hideLabel = false,
+  error,
+  hint,
+  id,
+  className = '',
+  ...props
+}: TextFieldProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const hintId = hint ? `${inputId}-hint` : undefined;
@@ -15,7 +25,7 @@ export function TextField({ label, error, hint, id, className = '', ...props }: 
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={inputId} className="text-sm font-medium">
+      <label htmlFor={inputId} className={hideLabel ? 'sr-only' : 'text-sm font-medium'}>
         {label}
       </label>
       <input

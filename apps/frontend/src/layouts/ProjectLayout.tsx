@@ -12,6 +12,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 // dependencies join in their own phases.
 const TABS = [
   { to: '', label: 'Overview', end: true },
+  { to: 'endpoints', label: 'Endpoints', end: false },
   { to: 'environments', label: 'Environments', end: false },
   { to: 'settings', label: 'Settings', end: false },
 ];

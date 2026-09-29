@@ -120,6 +120,18 @@ export function createProjectRateLimiters() {
   };
 }
 
+export function createEndpointRateLimiters() {
+  return {
+    createEndpoint: createLimiter({
+      name: 'endpoint-create',
+      windowMs: 60 * MINUTE_MS,
+      limit: 100,
+      perUser: true,
+      message: 'Too many endpoints created. Try again later.',
+    }),
+  };
+}
+
 /** Rate limiters are built per app so each `createApp()` (and each test) starts fresh. */
 export function createAuthRateLimiters() {
   return {

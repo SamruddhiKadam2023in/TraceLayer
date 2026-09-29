@@ -1,0 +1,30 @@
+{
+  "name": "@tracelayer/executor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Server-side HTTP execution for endpoints: variable resolution, SSRF protection, limits",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@tracelayer/shared": "workspace:^",
+    "undici": "^6"
+  },
+  "devDependencies": {
+    "@types/jest": "^30",
+    "@types/node": "^20",
+    "jest": "^30",
+    "ts-jest": "^29"
+  }
+}

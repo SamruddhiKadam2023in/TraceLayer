@@ -12,6 +12,8 @@ import { ProjectLayout } from '@/layouts/ProjectLayout';
 import { ProjectOverviewPage } from '@/pages/project/ProjectOverviewPage';
 import { ProjectEnvironmentsPage } from '@/pages/project/ProjectEnvironmentsPage';
 import { ProjectSettingsPage } from '@/pages/project/ProjectSettingsPage';
+import { ProjectEndpointsPage } from '@/pages/project/ProjectEndpointsPage';
+import { EndpointCreatePage, EndpointDetailPage } from '@/pages/project/EndpointEditorPages';
 import { RedirectIfAuthenticated, RequireAuth, RequireWorkspace } from './guards';
 
 export const routes: RouteObject[] = [
@@ -47,6 +49,9 @@ export const routes: RouteObject[] = [
                     element: <ProjectLayout />,
                     children: [
                       { index: true, element: <ProjectOverviewPage /> },
+                      { path: 'endpoints', element: <ProjectEndpointsPage /> },
+                      { path: 'endpoints/new', element: <EndpointCreatePage /> },
+                      { path: 'endpoints/:endpointId', element: <EndpointDetailPage /> },
                       { path: 'environments', element: <ProjectEnvironmentsPage /> },
                       { path: 'settings', element: <ProjectSettingsPage /> },
                     ],

@@ -4,10 +4,10 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 4 of 20 (Projects) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 5 of 20 (API endpoints) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
-> teammates under role-based permissions, and organise their APIs into projects with
-> environments, base URLs and encrypted secret variables.
+> teammates under role-based permissions, organise their APIs into projects with environments
+> and encrypted secret variables, and save API endpoints with their full request configuration.
 > Product features are added phase by
 > phase following the [master specification](docs/SPEC.md). Sections below marked _(planned)_
 > describe features that do not exist yet.
@@ -35,19 +35,19 @@ monitoring and investigation tool, not a Postman clone.
 
 ## Product features
 
-| Feature                                                              | Status                    |
-| -------------------------------------------------------------------- | ------------------------- |
-| System status page (live API, database, Redis and worker health)     | ✅ Phase 1                |
-| Accounts and authentication (JWT access + rotating refresh tokens)   | ✅ Phase 2                |
-| Workspaces with roles (owner, admin, member, viewer)                 | ✅ Phase 3                |
-| Projects, environments and environment variables (encrypted secrets) | ✅ Phase 4                |
-| API endpoints                                                        | _(planned, Phase 5)_      |
-| Manual request builder with history                                  | _(planned, Phase 6)_      |
-| Scheduled monitors (availability, status, performance, validation)   | _(planned, Phase 7)_      |
-| Metrics and analytics dashboards                                     | _(planned, Phases 8–9)_   |
-| Alert rules, incidents and incident timelines                        | _(planned, Phases 10–11)_ |
-| Real-time dashboard updates                                          | _(planned, Phase 12)_     |
-| API dependency map                                                   | _(planned, Phase 13)_     |
+| Feature                                                                | Status                    |
+| ---------------------------------------------------------------------- | ------------------------- |
+| System status page (live API, database, Redis and worker health)       | ✅ Phase 1                |
+| Accounts and authentication (JWT access + rotating refresh tokens)     | ✅ Phase 2                |
+| Workspaces with roles (owner, admin, member, viewer)                   | ✅ Phase 3                |
+| Projects, environments and environment variables (encrypted secrets)   | ✅ Phase 4                |
+| API endpoints: method, URL, headers, params, body, auth, timeout, tags | ✅ Phase 5                |
+| Manual request builder with history                                    | _(planned, Phase 6)_      |
+| Scheduled monitors (availability, status, performance, validation)     | _(planned, Phase 7)_      |
+| Metrics and analytics dashboards                                       | _(planned, Phases 8–9)_   |
+| Alert rules, incidents and incident timelines                          | _(planned, Phases 10–11)_ |
+| Real-time dashboard updates                                            | _(planned, Phase 12)_     |
+| API dependency map                                                     | _(planned, Phase 13)_     |
 
 ## Architecture
 
@@ -165,11 +165,16 @@ Current coverage:
   Projects and environments: CRUD, authorization per role, name and limit rules, base URL
   validation, and secrets (encrypted in the database, never returned by any endpoint, and
   protected by a database constraint). Unit tests cover the AES-256-GCM secret encryption.
+  Endpoints: CRUD, filters, per-role access, and every configuration rule (credential
+  references, URL forms, JSON with variables, no body on GET/HEAD, validation of the merged
+  result on partial updates).
 - **Worker (Jest):** the heartbeat.
 - **Frontend (Vitest + Testing Library):** sign-in, sign-up, sign-out, route protection, session
   restore on reload, silent token renewal, the System Status page, first-workspace onboarding,
   workspace switching, what each role sees in settings, and member and deletion flows; the
-  project list, overview, environments and settings, including secret masking and editing.
+  project list, overview, environments and settings, including secret masking and editing; the
+  endpoint list and filters, the endpoint editor (tabs, validation, variable warnings, keyboard
+  navigation) and read-only access for viewers.
 
 End-to-end tests with Playwright arrive in Phase 15, and a GitHub Actions pipeline running all of
 the above in Phase 16.
@@ -194,6 +199,7 @@ All endpoints live under `/api` and return one of two shapes:
 | GET    | `/api/auth/me`       | Bearer token   | The signed-in user                                                 |
 | —      | `/api/workspaces/…`  | Bearer token   | Workspace CRUD and members (see the API reference)                 |
 | —      | `/api/projects/…`    | Bearer token   | Projects, environments and variables (see the API reference)       |
+| —      | `/api/endpoints/…`   | Bearer token   | Saved API endpoints (see the API reference)                        |
 
 Request and response details for every endpoint: [docs/api.md](docs/api.md).
 
@@ -214,6 +220,9 @@ In place so far:
 - **Secret variables** are encrypted at rest with AES-256-GCM (`ENCRYPTION_KEY`) and are
   write-only: no endpoint ever returns them, not even to owners. A database CHECK constraint
   makes it impossible to store a secret in plaintext.
+- **No credentials in endpoint configuration.** Bearer tokens, basic-auth passwords, API keys and
+  credential headers (`Authorization`, `Cookie`, `X-Api-Key`, …) must reference an environment
+  variable such as `{{API_TOKEN}}`, so credentials only ever live in encrypted secrets.
 - **Authorization** is enforced by the API on every request, from one permission table shared
   with the frontend (which only uses it to hide controls). Non-members get **404**, not 403, so
   workspace ids cannot be probed. Member changes run inside a transaction that locks the

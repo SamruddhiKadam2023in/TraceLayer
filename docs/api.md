@@ -68,6 +68,7 @@ carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `
 | `POST /workspaces`             | 20 per hour, per user             |
 | `POST /workspaces/:id/members` | 30 per 15 min, per user           |
 | `POST /projects`               | 30 per hour, per user             |
+| `POST /endpoints`              | 100 per hour, per user            |
 
 ## Health
 
@@ -342,3 +343,69 @@ An **environment**, with its variables:
 
 **Secrets are write-only.** For `isSecret: true` every response carries `value: null`. The
 value is stored encrypted (AES-256-GCM) and is only ever decrypted on the server.
+
+## Endpoints
+
+Require `Authorization: Bearer <access token>`. Every member of the project's workspace can
+read; owners, admins and members (`monitoring.manage`) can create, change and delete. Anyone
+outside the workspace, and any malformed id, gets `404 NOT_FOUND` ("Endpoint not found").
+
+An **endpoint**:
+
+```json
+{
+  "id": "5b0d…",
+  "projectId": "3f1c…",
+  "name": "Create order",
+  "description": null,
+  "method": "POST",
+  "url": "/orders",
+  "environmentId": "9a0e…",
+  "headers": [{ "key": "Authorization", "value": "Bearer {{API_TOKEN}}", "enabled": true }],
+  "queryParams": [{ "key": "dryRun", "value": "true", "enabled": false }],
+  "body": { "type": "json", "content": "{\"qty\": {{QTY}}}" },
+  "auth": { "type": "none" },
+  "timeoutMs": 10000,
+  "expectedStatus": 201,
+  "tags": ["orders"],
+  "createdBy": { "id": "ae2e…", "name": "Ada Lovelace" },
+  "createdAt": "…",
+  "updatedAt": "…"
+}
+```
+
+| Method | Path                                                | Required role          | Result                      |
+| ------ | --------------------------------------------------- | ---------------------- | --------------------------- |
+| GET    | `/api/endpoints?projectId=…[&search=&method=&tag=]` | any member             | `200`, endpoints by name    |
+| POST   | `/api/endpoints`                                    | owner, admin or member | `201`, the endpoint         |
+| GET    | `/api/endpoints/:id`                                | any member             | `200`, the endpoint         |
+| PATCH  | `/api/endpoints/:id`                                | owner, admin or member | `200`, the updated endpoint |
+| DELETE | `/api/endpoints/:id`                                | owner, admin or member | `204`                       |
+
+The list endpoint filters with `search` (case-insensitive, on name or URL), `method` and `tag`.
+
+**Create** takes `projectId`, `name`, `method` and `url`. Everything else is optional, with these
+defaults: no description, no environment, no headers or params, body `{ "type": "none" }`, auth
+`{ "type": "none" }`, `timeoutMs` 10000, `expectedStatus` `null` and no tags. **Update** takes any
+subset of the fields. It is merged into the stored endpoint, and the whole result must be valid.
+
+| Field            | Rules                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `name`           | 1–100 characters, unique in the project ignoring case (`409`)                                    |
+| `method`         | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` or `OPTIONS`                                     |
+| `url`            | `/path`, `{{VAR}}/path` or `http(s)://…`; at most 2048 characters; no `?` or `#`                 |
+| `environmentId`  | an environment of the **same** project (else `404`, path `environmentId`), or `null`             |
+| `headers`        | up to 50 `{ key, value, enabled }`; `key` must be a valid header name                            |
+| `queryParams`    | up to 50 `{ key, value, enabled }`                                                               |
+| `body`           | `none`, `json` (valid JSON), `text` or `form` (fields). Not allowed for GET or HEAD.             |
+| `auth`           | `none`, `bearer` (`token`), `basic` (`username`, `password`) or `apiKey` (`in`, `name`, `value`) |
+| `timeoutMs`      | 1000–30000                                                                                       |
+| `expectedStatus` | 100–599, or `null` for "any 2xx"                                                                 |
+| `tags`           | up to 10; lower-cased; letters, digits and dashes; duplicates removed                            |
+
+- A project holds at most **200** endpoints (`409`).
+- **Variables:** any value may reference an environment variable as `{{NAME}}`. It is substituted
+  when the request runs.
+- **Credentials must be references:** `auth.token`, `auth.password` and `auth.value` must be
+  exactly one `{{NAME}}`, and credential headers (`Authorization`, `Cookie`, `X-Api-Key`, …) must
+  contain one. Otherwise the request is rejected with `400` on that field.
