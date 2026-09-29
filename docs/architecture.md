@@ -2,9 +2,9 @@
 
 TraceLayer is a pnpm monorepo with three runnable apps (frontend, backend, worker) and two shared
 packages (database client, shared types). PostgreSQL is the system of record; Redis carries the job
-queue, the worker heartbeat and, later, real-time fan-out.
+queue, the worker heartbeat, rate-limit counters and, later, real-time fan-out.
 
-> **Status:** this document describes the Phase 1 foundation. Sections marked _(planned)_ describe
+> **Status:** this document covers Phases 1–2 (foundation and authentication). Sections marked _(planned)_ describe
 > the target design from [SPEC.md](SPEC.md) and are filled in by the phase noted.
 
 ## System diagram
@@ -76,7 +76,11 @@ docker-compose.yml
 - **In Docker** the app is built to static files and served by nginx, which also reverse-proxies
   `/api` and `/socket.io` to the backend (`docker/nginx.conf`). Unknown paths fall back to
   `index.html` for client-side routing; hashed assets are cached for a year, the HTML shell never.
-- Phase 1 ships one real screen, **System Status**, which renders the live `/api/health` report.
+- Routes are split into **public** (`/login`, `/register`, in `AuthLayout`) and **protected**
+  (everything else, in `AppLayout`, the persistent shell: top bar, collapsible sidebar, main
+  content). See [Authentication](#authentication) for how the guards decide.
+- Screens so far: sign-in, sign-up, and **System Status**, which renders the live `/api/health`
+  report. Sidebar entries are added as each feature is built, so there are no placeholder pages.
 
 ### Backend — `apps/backend`
 
@@ -86,7 +90,7 @@ Layered so HTTP concerns never leak into business logic:
 routes/        URL → controller mapping
 controllers/   parse the request, call a service, shape the response
 services/      business logic; the only layer that talks to Prisma/Redis
-middleware/    cross-cutting concerns (errors; auth and validation in later phases)
+middleware/    cross-cutting concerns: errors, requireAuth, rate limiting
 lib/           long-lived clients (Prisma, Redis)
 config/env.ts  environment validated with Zod at startup — the process exits on bad config
 utils/         logger, AppError
@@ -157,8 +161,9 @@ Both shapes are defined once in `@tracelayer/shared` and used by the backend and
 
 - PostgreSQL 16 is the system of record. Prisma 6 provides the schema, migrations and a typed
   client, published inside the monorepo as `@tracelayer/db` and shared by the backend and worker.
-- Models are added phase by phase, each with its own migration. Phase 1 contains only the
-  datasource and generator, no tables yet.
+- Models are added phase by phase, each with its own migration. Current tables: `users` and
+  `refresh_tokens`. Tables and columns use snake_case (`@@map`/`@map`); ids are UUIDs and
+  timestamps are `timestamptz`.
 - The backend container runs `prisma migrate deploy` before starting, so a fresh
   `docker compose up` always has an up-to-date schema. The worker waits for the backend to
   become healthy, which guarantees migrations have run first.
@@ -167,14 +172,77 @@ Both shapes are defined once in `@tracelayer/shared` and used by the backend and
 
 - Redis 7 in append-only mode with `maxmemory-policy noeviction`: BullMQ stores jobs in Redis,
   and an evicting policy could silently drop queued work.
-- Current uses: the BullMQ queue and the worker heartbeat. Planned: scheduled (repeatable)
-  monitor jobs, rate-limit counters (Phase 14), and Socket.IO event fan-out (Phase 12).
+- Current uses: the BullMQ queue, the worker heartbeat and the auth rate-limit counters. Planned:
+  scheduled (repeatable) monitor jobs (Phase 7) and Socket.IO event fan-out (Phase 12).
 
 ### Shared package — `packages/shared`
 
-Types and constants every app agrees on: the API envelope types, `HealthReport`, HTTP methods,
-workspace roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`), queue names and Redis key names.
-Defining them once stops the frontend, backend and worker from drifting apart.
+Types, constants and validation schemas every app agrees on: the API envelope types,
+`HealthReport`, HTTP methods, workspace roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`), queue and
+Redis key names, and the Zod schemas for sign-in and sign-up. The backend validates requests
+with the same schemas the frontend forms use, so the two can never disagree on the rules.
+
+## Authentication
+
+```text
+ Browser                                   API                              PostgreSQL
+ ───────                                   ───                              ──────────
+ POST /auth/login {email, password} ──▶  bcrypt.compare ──────────────────▶ users
+                                          issue refresh token ────────────▶ refresh_tokens (HMAC only)
+ ◀── { user, accessToken (15 min) } + Set-Cookie: tl_refresh (httpOnly, 7 days)
+
+ GET /api/… Authorization: Bearer <access> ──▶ requireAuth verifies JWT (no DB lookup)
+ ◀── 401 when expired
+ POST /auth/refresh (cookie sent automatically) ──▶ rotate: revoke old row, insert new row
+ ◀── new accessToken + new cookie; the original request is retried
+```
+
+**Access token.** An HS256 JWT signed with `JWT_SECRET`, containing only the user id (`sub`),
+issuer, audience and expiry. Verification pins the algorithm, which rejects `alg: none` and
+algorithm-confusion tokens. It is stateless, so protected routes need no database lookup. The
+browser keeps it in memory (Zustand) only: nothing in `localStorage` for an injected script to
+read, at the cost of one refresh call per page load.
+
+**Refresh token.** 32 random bytes, sent only as the `tl_refresh` cookie:
+
+- `HttpOnly`: page scripts cannot read it.
+- `SameSite=Strict`: browsers never attach it to cross-site requests. This is the CSRF defence
+  for the two cookie-authenticated endpoints, refresh and logout.
+- `Path=/api/auth`: it is not sent with ordinary API calls.
+- `Secure` in production (`COOKIE_SECURE`; off for the plain-HTTP local Docker stack).
+
+The database stores `HMAC-SHA256(JWT_REFRESH_SECRET, token)`, never the token, so a database
+leak alone is not enough to present a valid token.
+
+**Rotation and theft detection.** Each login starts a token _family_. Every refresh revokes the
+presented token and issues a new one in the same family, inside a transaction whose conditional
+update lets exactly one of two concurrent refreshes win. Presenting a token that was already
+revoked means two parties hold the same token, so one of them stole it. The API then revokes
+the whole family, signing out both the attacker and the victim, who simply signs in again.
+Logout revokes the current family only, so other devices stay signed in.
+
+**Passwords.** bcrypt with a configurable cost (`BCRYPT_ROUNDS`, default 12). Passwords are
+limited to 72 bytes because bcrypt silently ignores anything longer. For an unknown email,
+login still runs a bcrypt comparison against a dummy hash, so response time does not reveal
+whether an account exists; the error message is identical too.
+
+**Rate limiting.** `express-rate-limit` with a small Redis store
+(`middleware/rate-limit.ts`): `INCR` plus `PEXPIRE NX` in one `MULTI`, so counters are shared
+by every API instance. Failed logins, registrations and refreshes are limited per client IP. If
+Redis is unreachable the limiter fails open and logs the error: availability wins over
+throttling.
+
+**Frontend flow.**
+
+1. On page load, `RootLayout` calls `/auth/refresh`. Until it answers, protected routes show a
+   loader instead of flashing the sign-in page.
+2. `RequireAuth` sends signed-out users to `/login`, remembering the requested page.
+   `RedirectIfAuthenticated` sends them back there after sign-in. Only same-app paths are
+   accepted, to prevent open redirects.
+3. The axios client adds the bearer token to every request. On a 401 it refreshes once and
+   replays the request. Concurrent 401s share a single refresh call. Across browser tabs, the Web
+   Locks API makes refreshes take turns: two tabs refreshing with the same cookie at once would
+   otherwise look like token theft.
 
 ## Configuration
 

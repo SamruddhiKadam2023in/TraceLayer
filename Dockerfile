@@ -50,7 +50,7 @@ CMD ["node", "apps/worker/dist/index.js"]
 
 # ── Frontend: static build served by nginx
 FROM deps AS frontend-build
-COPY tsconfig.base.json ./
+COPY tsconfig.base.json tsconfig.node.json ./
 COPY packages/shared ./packages/shared
 COPY apps/frontend ./apps/frontend
 RUN pnpm --filter @tracelayer/frontend build

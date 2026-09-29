@@ -1,23 +1,19 @@
-import { Link, Outlet } from 'react-router';
-import { Activity } from 'lucide-react';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { useEffect } from 'react';
+import { Outlet } from 'react-router';
+import { refreshSession } from '@/services/api';
+import { useAuthStore } from '@/stores/auth.store';
 import { useSystemThemeSync } from '@/stores/theme.store';
 
+/** App-wide concerns: theme syncing and restoring the session on page load. */
 export function RootLayout() {
   useSystemThemeSync();
 
-  return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-line bg-surface px-4">
-        <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-          <Activity className="size-4 text-accent" aria-hidden="true" />
-          TraceLayer
-        </Link>
-        <ThemeToggle />
-      </header>
-      <main className="flex-1">
-        <Outlet />
-      </main>
-    </div>
-  );
+  useEffect(() => {
+    if (useAuthStore.getState().status !== 'unknown') return;
+    // The refresh cookie survives reloads; the in-memory access token does not.
+    // If the API is unreachable the user lands on sign-in, which reports the connection problem.
+    refreshSession().catch(() => useAuthStore.getState().clearSession());
+  }, []);
+
+  return <Outlet />;
 }

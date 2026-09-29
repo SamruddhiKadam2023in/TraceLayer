@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env';
 import { logger } from './utils/logger';
-import { apiRouter } from './routes';
+import { createApiRouter } from './routes';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 
 export const JSON_BODY_LIMIT = '1mb';
@@ -50,7 +50,7 @@ export function createApp(): Express {
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
   app.use(cookieParser());
 
-  app.use('/api', apiRouter);
+  app.use('/api', createApiRouter());
 
   app.use(notFoundHandler);
   app.use(errorHandler);

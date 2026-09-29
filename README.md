@@ -4,8 +4,9 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 1 of 20 (Foundation) complete.** The monorepo, frontend, backend,
-> worker, database and Docker stack are running end to end. Product features are added phase by
+> **Project status: Phase 2 of 20 (Authentication) complete.** The monorepo, frontend, backend,
+> worker, database and Docker stack run end to end, and users can create an account, sign in and
+> stay signed in securely. Product features are added phase by
 > phase following the [master specification](docs/SPEC.md). Sections below marked _(planned)_
 > describe features that do not exist yet.
 
@@ -35,7 +36,7 @@ monitoring and investigation tool, not a Postman clone.
 | Feature                                                            | Status                    |
 | ------------------------------------------------------------------ | ------------------------- |
 | System status page (live API, database, Redis and worker health)   | ✅ Phase 1                |
-| Accounts and authentication (JWT access + rotating refresh tokens) | _(planned, Phase 2)_      |
+| Accounts and authentication (JWT access + rotating refresh tokens) | ✅ Phase 2                |
 | Workspaces with roles (owner, admin, member, viewer)               | _(planned, Phase 3)_      |
 | Projects, environments and API endpoints                           | _(planned, Phases 4–5)_   |
 | Manual request builder with history                                | _(planned, Phase 6)_      |
@@ -68,14 +69,14 @@ The full design, including every component and the Docker topology, is in
 
 ## Technology stack
 
-| Area     | Technology                                                                   |
-| -------- | ---------------------------------------------------------------------------- |
-| Frontend | React 19, TypeScript, Vite 6, Tailwind CSS 4, React Router 7, Zustand, axios |
-| Backend  | Node.js 20+, Express 5, TypeScript, Zod, pino                                |
-| Database | PostgreSQL 16, Prisma 6                                                      |
-| Jobs     | Redis 7, BullMQ 5, ioredis                                                   |
-| Testing  | Jest + Supertest (backend, worker), Vitest + Testing Library (frontend)      |
-| Tooling  | pnpm workspaces, ESLint 9, Prettier 3, Docker Compose                        |
+| Area     | Technology                                                                                         |
+| -------- | -------------------------------------------------------------------------------------------------- |
+| Frontend | React 19, TypeScript, Vite 6, Tailwind CSS 4, React Router 7, Zustand, axios, React Hook Form, Zod |
+| Backend  | Node.js 20+, Express 5, TypeScript, Zod, pino, jsonwebtoken, bcrypt (bcryptjs), express-rate-limit |
+| Database | PostgreSQL 16, Prisma 6                                                                            |
+| Jobs     | Redis 7, BullMQ 5, ioredis                                                                         |
+| Testing  | Jest + Supertest (backend, worker), Vitest + Testing Library (frontend)                            |
+| Tooling  | pnpm workspaces, ESLint 9, Prettier 3, Docker Compose                                              |
 
 ## Local development
 
@@ -120,6 +121,7 @@ pnpm dev           # frontend, backend and worker with hot reload
 ```
 
 The app runs at http://localhost:5180 (Vite proxies `/api` to the backend on port 4000).
+Open it and create an account; every page except sign-in and sign-up requires one.
 If the Docker `backend` container is also running, stop it first
 (`docker compose stop backend worker frontend`), since both use port 4000.
 
@@ -145,8 +147,20 @@ on your machine. To use a different port, change `POSTGRES_PORT` and `DATABASE_U
 pnpm typecheck && pnpm lint && pnpm format:check && pnpm test
 ```
 
-Current coverage (Phase 1): the backend health, 404 and error-envelope behaviour (Jest +
-Supertest), the worker heartbeat (Jest), and the System Status page (Vitest + Testing Library).
+Backend tests need PostgreSQL and Redis running (`pnpm infra:up`). Integration tests use a
+separate `tracelayer_test` database, which is created and migrated automatically, so your
+development data is never touched.
+
+Current coverage:
+
+- **Backend (Jest + Supertest):** health checks, error envelope, and the full auth flow against
+  a real database: registration and validation, login, token verification (including expired,
+  forged and `alg: none` tokens), refresh-token rotation and theft detection, logout, and rate
+  limiting. The Redis rate-limit store is tested against a real Redis.
+- **Worker (Jest):** the heartbeat.
+- **Frontend (Vitest + Testing Library):** sign-in, sign-up, sign-out, route protection, session
+  restore on reload, silent token renewal, and the System Status page.
+
 End-to-end tests with Playwright arrive in Phase 15, and a GitHub Actions pipeline running all of
 the above in Phase 16.
 
@@ -159,16 +173,31 @@ All endpoints live under `/api` and return one of two shapes:
 { "success": false, "error": { "code": "NOT_FOUND", "message": "…", "requestId": "…" } }
 ```
 
-| Method | Path               | Description                                                               |
-| ------ | ------------------ | ------------------------------------------------------------------------- |
-| GET    | `/api/health/live` | Liveness check                                                            |
-| GET    | `/api/health`      | Status of the database, Redis and worker; **503** if a data store is down |
+| Method | Path                 | Auth           | Description                                                        |
+| ------ | -------------------- | -------------- | ------------------------------------------------------------------ |
+| GET    | `/api/health/live`   | —              | Liveness check                                                     |
+| GET    | `/api/health`        | —              | Database, Redis and worker status; **503** if a data store is down |
+| POST   | `/api/auth/register` | —              | Create an account and start a session                              |
+| POST   | `/api/auth/login`    | —              | Start a session                                                    |
+| POST   | `/api/auth/refresh`  | Refresh cookie | Rotate the refresh token, get a new access token                   |
+| POST   | `/api/auth/logout`   | Refresh cookie | End the session                                                    |
+| GET    | `/api/auth/me`       | Bearer token   | The signed-in user                                                 |
 
-Full API documentation is added as endpoints are built _(planned: `docs/api.md`)_.
+Request and response details for every endpoint: [docs/api.md](docs/api.md).
 
 ## Security
 
-In place from Phase 1:
+In place so far:
+
+- **Passwords** are hashed with bcrypt (cost 12) and never stored or logged in plaintext. Login
+  takes the same time whether or not the email exists, so accounts cannot be discovered by timing.
+- **Access tokens** are short-lived (15 min) HS256 JWTs with a pinned algorithm, issuer and
+  audience. The browser keeps them in memory only, never in `localStorage`.
+- **Refresh tokens** are random 256-bit values in an `httpOnly`, `SameSite=Strict` cookie scoped
+  to `/api/auth`. Only an HMAC of each token is stored. Every refresh rotates the token, and
+  reusing an old one revokes the whole session, which cuts off a stolen token.
+- **Rate limits** (stored in Redis, shared across API instances): 10 failed sign-ins per 15 min,
+  5 registrations per hour, 60 refreshes per 15 min, per client IP.
 
 - Security headers via `helmet`; `x-powered-by` disabled.
 - CORS limited to the configured frontend origin.
@@ -179,8 +208,8 @@ In place from Phase 1:
 - No real secrets in the repository: `.env` is git-ignored and `.env.example` holds
   development-only placeholders.
 
-Planned: authentication and role-based access (Phases 2–3), SSRF protection for monitor
-requests (Phase 7), rate limiting and further hardening (Phase 14).
+Planned: role-based access control (Phase 3), SSRF protection for monitor requests (Phase 7),
+and further hardening (Phase 14).
 
 ## Roadmap
 
@@ -195,6 +224,7 @@ hardening → testing → CI/CD → demo data → UI polish → documentation �
 | -------------------------------------------- | ------------------------------------------------ |
 | [docs/SPEC.md](docs/SPEC.md)                 | The master product and engineering specification |
 | [docs/architecture.md](docs/architecture.md) | System architecture and components               |
+| [docs/api.md](docs/api.md)                   | REST API reference                               |
 
-Further guides (database, API, monitoring, security, deployment) are added in the phases that
+Further guides (database, monitoring, security, deployment) are added in the phases that
 build those parts.

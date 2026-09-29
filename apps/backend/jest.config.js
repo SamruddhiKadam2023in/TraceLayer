@@ -10,6 +10,9 @@ module.exports = {
     '^@tracelayer/shared$': '<rootDir>/../../packages/shared/src/index.ts',
     '^@tracelayer/db$': '<rootDir>/../../packages/db/src/index.ts',
   },
+  globalSetup: '<rootDir>/tests/global-setup.ts',
   setupFiles: ['<rootDir>/tests/setup-env.ts'],
+  // Integration suites share one database, so files run one at a time.
+  maxWorkers: 1,
   clearMocks: true,
 };

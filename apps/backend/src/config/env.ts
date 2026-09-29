@@ -9,6 +9,13 @@ dotenv.config({
   quiet: true,
 });
 
+const DURATION_UNIT_SECONDS = { s: 1, m: 60, h: 3600, d: 86_400 } as const;
+
+function durationToSeconds(value: string): number {
+  const unit = value.slice(-1) as keyof typeof DURATION_UNIT_SECONDS;
+  return Number(value.slice(0, -1)) * DURATION_UNIT_SECONDS[unit];
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
@@ -18,8 +25,17 @@ const envSchema = z.object({
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
-  JWT_ACCESS_TTL: z.string().default('15m'),
+  /** Access-token lifetime such as `15m`, `900s` or `1h`; parsed to seconds. */
+  JWT_ACCESS_TTL: z
+    .string()
+    .regex(/^\d+[smhd]$/, 'JWT_ACCESS_TTL must look like 15m, 900s, 1h or 1d')
+    .default('15m')
+    .transform(durationToSeconds),
   JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(7),
+  /** bcrypt cost factor. 12 in production; tests lower it to keep the suite fast. */
+  BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
+  /** Mark auth cookies Secure. Defaults to true in production; the local Docker stack serves plain HTTP. */
+  COOKIE_SECURE: z.enum(['true', 'false']).optional(),
   ENCRYPTION_KEY: z
     .string()
     .refine(
@@ -43,3 +59,4 @@ function loadEnv(): Env {
 
 export const env = loadEnv();
 export const isProduction = env.NODE_ENV === 'production';
+export const cookieSecure = env.COOKIE_SECURE ? env.COOKIE_SECURE === 'true' : isProduction;
