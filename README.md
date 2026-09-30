@@ -189,10 +189,15 @@ migrations are described in [docs/database.md](docs/database.md).
 
 ## API documentation
 
-All endpoints live under `/api` and return one of two shapes:
+All endpoints live under `/api` and return one of two shapes. On success:
 
 ```json
 { "success": true, "data": {} }
+```
+
+On failure:
+
+```json
 { "success": false, "error": { "code": "NOT_FOUND", "message": "…", "requestId": "…" } }
 ```
 
