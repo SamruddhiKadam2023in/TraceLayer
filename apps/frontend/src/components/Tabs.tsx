@@ -51,7 +51,7 @@ export function Tabs({ label, tabs, selected, onSelect, children }: TabsProps) {
         role="tablist"
         aria-label={label}
         onKeyDown={onKeyDown}
-        className="flex gap-1 overflow-x-auto border-b border-line"
+        className="flex gap-1 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-line)]"
       >
         {tabs.map((tab) => {
           const isSelected = tab.id === selected;
@@ -65,7 +65,7 @@ export function Tabs({ label, tabs, selected, onSelect, children }: TabsProps) {
               aria-controls={`${baseId}-panel`}
               tabIndex={isSelected ? 0 : -1}
               onClick={() => onSelect(tab.id)}
-              className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${
+              className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${
                 isSelected
                   ? 'border-accent font-medium text-fg'
                   : 'border-transparent text-fg-muted hover:text-fg'

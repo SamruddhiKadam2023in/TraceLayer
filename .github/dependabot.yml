@@ -1,4 +1,8 @@
 # Weekly dependency update pull requests; CI checks each one before it can be merged.
+#
+# Major versions (Node 22 → 26, Prisma 6 → 7, …) carry breaking changes and are upgraded
+# deliberately, by hand, so Dependabot only proposes minor and patch updates for packages and
+# base images. Each ecosystem's updates arrive grouped in one pull request a week.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -6,8 +10,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     groups:
-      # Patch and minor updates together, one pull request a week; majors stay separate.
       minor-and-patch:
         update-types: [minor, patch]
 
@@ -15,8 +21,17 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      github-actions:
+        patterns: ['*']
 
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      docker-images:
+        patterns: ['*']

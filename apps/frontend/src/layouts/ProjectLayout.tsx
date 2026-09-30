@@ -88,14 +88,19 @@ export function ProjectLayout() {
         <p className="mt-1 max-w-2xl text-sm text-fg-muted">{project.description}</p>
       )}
 
-      <nav aria-label="Project" className="mt-6 flex gap-1 overflow-x-auto border-b border-line">
+      {/* The divider is an inset shadow, not a border: tabs pulled over a border with -mb-px
+          overflow the scroll container by 1px and show a vertical scrollbar. */}
+      <nav
+        aria-label="Project"
+        className="mt-6 flex gap-1 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-line)]"
+      >
         {TABS.map((tab) => (
           <NavLink
             key={tab.label}
             to={tab.to}
             end={tab.end}
             className={({ isActive }) =>
-              `-mb-px border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors ${
+              `border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors ${
                 isActive
                   ? 'border-accent font-medium text-fg'
                   : 'border-transparent text-fg-muted hover:text-fg'
