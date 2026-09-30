@@ -128,8 +128,8 @@ colour contrast) in a real browser, in both themes, on:
 - a project's overview, new-endpoint editor, monitors, environments and dependency map;
 - a dialog.
 
-Any violation fails the run. It found one in Phase 18: white text on the dark theme's bright
-red danger button. The fix was a dark-on-red text token for that button.
+Any violation fails the run. It has caught a real one: white text on the dark theme's bright
+red danger button, fixed with a dark-on-red text token for that button.
 
 ## Continuous integration
 

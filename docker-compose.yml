@@ -66,7 +66,8 @@ services:
     environment:
       <<: *server-env
       BACKEND_PORT: 4000
-      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-8080}
+      # The public origin of the app (CORS, Socket.IO). Set PUBLIC_URL when deploying.
+      FRONTEND_URL: ${PUBLIC_URL:-http://localhost:${FRONTEND_PORT:-8080}}
       JWT_SECRET: ${JWT_SECRET:-change-me-dev-access-secret-at-least-32-chars}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-dev-refresh-secret-at-least-32-chars}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
@@ -108,7 +109,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-TraceLayer <alerts@tracelayer.local>}
-      APP_URL: http://localhost:${FRONTEND_PORT:-8080}
+      APP_URL: ${PUBLIC_URL:-http://localhost:${FRONTEND_PORT:-8080}}
     depends_on:
       mailpit:
         condition: service_started

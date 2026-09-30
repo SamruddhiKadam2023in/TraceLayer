@@ -186,7 +186,7 @@ Requires `Authorization: Bearer <access token>`.
 ## Workspaces
 
 All workspace endpoints require `Authorization: Bearer <access token>`. Access is checked on
-every request against the caller's role (see [architecture.md](architecture.md#authorization)):
+every request against the caller's role (see [security.md](security.md#authorization)):
 
 - A workspace the caller does not belong to, or a malformed id, returns
   **`404 NOT_FOUND`** ("Workspace not found"). It never returns 403, so workspace ids cannot be
