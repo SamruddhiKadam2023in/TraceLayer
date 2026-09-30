@@ -8,8 +8,6 @@ import { useQuery } from '@/hooks/useQuery';
 import { fetchProject } from '@/services/project.service';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 
-// Tabs appear as their features are built: endpoints, monitors, analytics, incidents and
-// dependencies join in their own phases.
 const TABS = [
   { to: '', label: 'Overview', end: true },
   { to: 'endpoints', label: 'Endpoints', end: false },
@@ -17,6 +15,7 @@ const TABS = [
   { to: 'analytics', label: 'Analytics', end: false },
   { to: 'incidents', label: 'Incidents', end: false },
   { to: 'alerts', label: 'Alerts', end: false },
+  { to: 'dependencies', label: 'Dependencies', end: false },
   { to: 'history', label: 'History', end: false },
   { to: 'environments', label: 'Environments', end: false },
   { to: 'settings', label: 'Settings', end: false },

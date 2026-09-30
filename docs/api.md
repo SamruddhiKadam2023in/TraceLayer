@@ -75,6 +75,7 @@ carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `
 | `GET /metrics…`                        | 120 per minute, per user          |
 | `POST /notification-channels/:id/test` | 10 per 15 min, per user           |
 | `POST /incidents/:id/events`           | 60 per 15 min, per user           |
+| `PUT /dependencies`                    | 120 per 15 min, per user          |
 
 ## Health
 
@@ -915,6 +916,82 @@ All fields are optional, but at least one is required. `assigneeId: null` unassi
 
 `message` is 1–2000 characters, trimmed. Returns the new `COMMENT` event. Rate limit: 60 per 15
 minutes, per user.
+
+## Dependencies
+
+A project's dependency map (spec §30). Everyone in the workspace can read it. Saving it and
+asking for suggestions need the owner, admin or member role.
+
+| Method | Path                                        | Description                                         |
+| ------ | ------------------------------------------- | --------------------------------------------------- |
+| GET    | `/api/dependencies?projectId=…`             | The map, with live health on nodes that have a host |
+| PUT    | `/api/dependencies`                         | Save the whole diagram (versioned)                  |
+| GET    | `/api/dependencies/suggestions?projectId=…` | Inferred nodes and connections not on the map yet   |
+
+The editor saves the whole diagram in one versioned request. This replaces the per-item
+`POST/PATCH/DELETE /api/dependencies/:id` routes sketched in spec §37: a save is all or nothing,
+and a stale save is refused instead of overwriting someone else's changes.
+
+### `GET /api/dependencies`
+
+```json
+{
+  "projectId": "…",
+  "version": 4,
+  "nodes": [
+    {
+      "id": "…",
+      "label": "Orders",
+      "kind": "SERVICE",
+      "origin": "MANUAL",
+      "host": "api.example.com",
+      "x": 0,
+      "y": 160,
+      "health": "DEGRADED",
+      "monitorCount": 2
+    }
+  ],
+  "edges": [{ "id": "…", "sourceId": "…", "targetId": "…", "origin": "INFERRED", "label": null }]
+}
+```
+
+- `kind` is one of `FRONTEND`, `GATEWAY`, `SERVICE`, `DATABASE`, `CACHE`, `QUEUE`, `EXTERNAL`.
+- `origin` is `MANUAL` (drawn by a person) or `INFERRED` (suggested by TraceLayer).
+- An edge means `source` depends on `target`.
+- `health` is the worst health of the project's monitors calling `host`, and `null` when no
+  monitor calls it.
+
+### `PUT /api/dependencies`
+
+```json
+{ "projectId": "…", "version": 4, "nodes": [ … ], "edges": [ … ] }
+```
+
+Nodes and edges have the shape above, without `health` and `monitorCount`. Send new nodes and
+edges with new UUIDs. Anything not sent is removed.
+
+| Rule        | Detail                                                                                                                |
+| ----------- | --------------------------------------------------------------------------------------------------------------------- |
+| `version`   | Must equal the current version, or the response is `409` (someone else saved; reload). Each save adds 1               |
+| Nodes       | At most 100. `label` 1–60 characters. `host` like `api.example.com[:port]` or `null`. `x`/`y` within ±100000, rounded |
+| Connections | At most 300. Both ends on the map, no node depending on itself, no duplicate pairs. `label` up to 60 characters       |
+| Ids         | Unique within the request; an id used by another project → `400`                                                      |
+
+Returns the saved map. Rate limit: 120 saves per 15 minutes, per user.
+
+### `GET /api/dependencies/suggestions`
+
+```json
+{ "nodes": [ … ], "edges": [ … ] }
+```
+
+- One `INFERRED` `SERVICE` node for every host the project's monitors and saved endpoints call
+  (resolved against environment base URLs) that no node on the map has yet.
+- Connections from the map's entry point to those hosts. The entry point is the first
+  `FRONTEND` or `GATEWAY` node, or a suggested `Clients` node.
+- Positions are laid out below the existing map.
+- Nothing is saved: add the suggestions to the map and `PUT` it.
+- Empty when there is nothing new.
 
 ## Real-time (Socket.IO)
 

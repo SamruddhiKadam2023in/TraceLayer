@@ -104,28 +104,32 @@ model WorkspaceMember {
 // ─── Projects & environments (Phase 4) ───────────────────────────────────────
 
 model Project {
-  id              String   @id @default(uuid()) @db.Uuid
-  workspaceId     String   @map("workspace_id") @db.Uuid
+  id                String   @id @default(uuid()) @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
   /// Unique per workspace, compared case-insensitively by the service.
-  name            String   @db.VarChar(100)
-  description     String?  @db.VarChar(500)
+  name              String   @db.VarChar(100)
+  description       String?  @db.VarChar(500)
   /// Last incident number used; incidents are numbered #1, #2, … per project.
-  incidentCounter Int      @default(0) @map("incident_counter")
+  incidentCounter   Int      @default(0) @map("incident_counter")
+  /// Bumped by every dependency-map save; saves must name the version they started from.
+  dependencyVersion Int      @default(0) @map("dependency_version")
   /// Kept as null if the creator's account is deleted.
-  createdById     String?  @map("created_by_id") @db.Uuid
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdById       String?  @map("created_by_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy    User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  environments Environment[]
-  endpoints    Endpoint[]
-  requests     RequestHistory[]
-  monitors     Monitor[]
-  monitorRuns  MonitorRun[]
-  alertRules   AlertRule[]
-  alerts       Alert[]
-  incidents    Incident[]
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy       User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  environments    Environment[]
+  endpoints       Endpoint[]
+  requests        RequestHistory[]
+  monitors        Monitor[]
+  monitorRuns     MonitorRun[]
+  alertRules      AlertRule[]
+  alerts          Alert[]
+  incidents       Incident[]
+  dependencyNodes DependencyNode[]
+  dependencyEdges DependencyEdge[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -582,4 +586,64 @@ model IncidentEvent {
 
   @@index([incidentId, createdAt])
   @@map("incident_events")
+}
+
+// ─── Dependency map (spec §30) ───────────────────────────────────────────────
+
+enum DependencyNodeKind {
+  FRONTEND
+  GATEWAY
+  SERVICE
+  DATABASE
+  CACHE
+  QUEUE
+  EXTERNAL
+
+  @@map("dependency_node_kind")
+}
+
+enum DependencyOrigin {
+  MANUAL
+  INFERRED
+
+  @@map("dependency_origin")
+}
+
+/// A box on a project's dependency map. Ids are chosen by the editor, so connections can
+/// reference new nodes before the first save.
+model DependencyNode {
+  id        String             @id @db.Uuid
+  projectId String             @map("project_id") @db.Uuid
+  label     String             @db.VarChar(60)
+  kind      DependencyNodeKind
+  origin    DependencyOrigin
+  /// Monitors calling this host give the node its health.
+  host      String?            @db.VarChar(253)
+  x         Int
+  y         Int
+
+  project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  outgoing DependencyEdge[] @relation("DependencySource")
+  incoming DependencyEdge[] @relation("DependencyTarget")
+
+  @@index([projectId])
+  @@map("dependency_nodes")
+}
+
+/// "source" depends on "target" (arrows point from caller to callee).
+model DependencyEdge {
+  id        String           @id @db.Uuid
+  projectId String           @map("project_id") @db.Uuid
+  sourceId  String           @map("source_id") @db.Uuid
+  targetId  String           @map("target_id") @db.Uuid
+  origin    DependencyOrigin
+  label     String?          @db.VarChar(60)
+
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source  DependencyNode @relation("DependencySource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target  DependencyNode @relation("DependencyTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, targetId])
+  @@index([projectId])
+  @@map("dependency_edges")
 }

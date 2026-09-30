@@ -176,6 +176,18 @@ export function createIncidentRateLimiters() {
   };
 }
 
+export function createDependencyRateLimiters() {
+  return {
+    save: createLimiter({
+      name: 'dependency-save',
+      windowMs: 15 * MINUTE_MS,
+      limit: 120,
+      perUser: true,
+      message: 'Too many saves. Wait a few minutes and try again.',
+    }),
+  };
+}
+
 export function createMetricsRateLimiters() {
   return {
     // Generous for dashboards that load several series at once, but bounded.

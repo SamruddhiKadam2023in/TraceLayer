@@ -9,4 +9,5 @@ declare class URL {
   readonly password: string;
   readonly search: string;
   readonly hash: string;
+  readonly host: string;
 }

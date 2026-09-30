@@ -864,6 +864,65 @@ types live in `packages/shared/src/realtime.ts`, so all three apps agree on them
 - The monitor page's timer polling now runs only as a fallback, when the live connection is
   down (and while waiting for "Run now").
 
+## Dependency map
+
+Each project has a map of how its services depend on each other, drawn with React Flow
+(spec §30). It lives in the project's **Dependencies** tab. Arrows point from a caller to what
+it depends on.
+
+**Model.**
+
+- `DependencyNode`: a label, a kind (Frontend, API gateway, Service, Database, Cache, Queue,
+  External API), a position, an origin (`MANUAL` or `INFERRED`) and an optional `host`.
+- `DependencyEdge`: source → target, origin, and an optional label.
+- A unique index prevents duplicate connections, and a `CHECK` constraint forbids a node
+  depending on itself.
+- Node ids are chosen by the editor, so new connections can reference new nodes before the
+  first save.
+
+**Saving.** The editor saves the whole diagram at once (`PUT /api/dependencies`):
+
+1. The transaction locks the project row and compares the version the editor started from with
+   the project's `dependencyVersion`.
+2. If someone saved in between, the save is refused with `409`, and the editor offers to reload.
+   Without this, two people editing the same map would silently overwrite each other. A test
+   forces two saves from the same version to race and fails without the lock.
+3. Ids that belong to another project are rejected.
+4. Validation is shared between the form and the API: at most 100 nodes and 300 connections,
+   connections only between nodes on the map, no duplicates, and bounded coordinates.
+
+This replaces the per-item `POST/PATCH/DELETE /api/dependencies/:id` routes sketched in spec
+§37, because a canvas editor changes many items at once. One versioned save keeps the map
+consistent, with no half-saved state.
+
+**Health on the map.** A node with a `host` shows the worst health (spec §24) among the
+project's monitors whose endpoint resolves to that host. The URL is resolved against the
+monitor's environment base URL. The page refreshes health live on `monitor.status_changed`,
+without touching nodes being edited.
+
+**Manual vs inferred** (spec §30 asks to distinguish them clearly).
+
+- **Detect dependencies** asks the API for suggestions (`GET /api/dependencies/suggestions`):
+  - every host the project's monitors and saved endpoints call, if it isn't on the map yet,
+    becomes an inferred service node;
+  - it is connected from the map's entry point (the first Frontend or API gateway node, or a
+    suggested inferred "Clients" node).
+- Suggestions are added to the canvas unsaved, so people review them before saving.
+- Inferred nodes have a dashed border and an "Inferred" tag. Inferred connections are dashed
+  and labelled "inferred". Manual ones are solid. A legend explains this, and the side panel
+  names the origin of every node and connection in text.
+
+**Editing.**
+
+- On the canvas: drag to move, drag from a node's bottom handle to another node to connect,
+  and press Delete to remove.
+- In the side panel: add, select, rename, change kind or host, remove nodes, and add or remove
+  connections. So the map works with a keyboard and a screen reader, not just a mouse.
+- "Save map" is enabled only when there are changes. "Discard changes" restarts from the saved
+  map. Leaving the page with unsaved changes asks for confirmation.
+- Viewers see the map and node details read-only.
+- React Flow (about 180 KB) loads only on this page.
+
 ## Configuration
 
 All configuration comes from environment variables; see [`.env.example`](../.env.example) for
