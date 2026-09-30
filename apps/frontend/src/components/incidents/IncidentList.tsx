@@ -35,7 +35,8 @@ export function IncidentList({ incidents, showProject = false, now }: IncidentLi
               <span className="font-mono text-xs text-fg-subtle">#{incident.number}</span>
               <IncidentStatusBadge status={incident.status} />
               <SeverityBadge severity={incident.severity} />
-              <div className="min-w-0 flex-1">
+              {/* A line of its own on phones; shares the row on wider screens. */}
+              <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
                 <p className="truncate text-sm font-medium">{incident.title}</p>
                 <p className="text-xs text-fg-subtle">
                   {showProject && `${incident.project.name} · `}

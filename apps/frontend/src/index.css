@@ -27,6 +27,7 @@
   --color-warn-soft: var(--tl-warn-soft);
   --color-fail: var(--tl-fail);
   --color-fail-soft: var(--tl-fail-soft);
+  --color-fail-fg: var(--tl-fail-fg);
 }
 
 :root {
@@ -45,6 +46,7 @@
   --tl-warn: #9a5b00;
   --tl-warn-soft: #fdf1dc;
   --tl-fail: #c0262d;
+  --tl-fail-fg: #ffffff;
   --tl-fail-soft: #fde7e8;
 }
 
@@ -64,6 +66,8 @@
   --tl-warn: #f0b429;
   --tl-warn-soft: #2a2110;
   --tl-fail: #ff6369;
+  /* Text on the bright dark-theme red: dark, like the accent, for contrast. */
+  --tl-fail-fg: #0b0d11;
   --tl-fail-soft: #2d1416;
 }
 
@@ -84,5 +88,39 @@
   }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-accent;
+  }
+  /* Browsers keep fieldsets at least as wide as their content, which breaks narrow screens. */
+  fieldset {
+    min-width: 0;
+  }
+}
+
+/* Motion: short and functional (something appeared, from where). Never decorative, and off
+   entirely for people who ask their system to reduce motion. */
+@keyframes tl-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tl-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+@utility animate-fade-in {
+  animation: tl-fade-in 120ms ease-out both;
+}
+@utility animate-rise-in {
+  animation: tl-rise-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

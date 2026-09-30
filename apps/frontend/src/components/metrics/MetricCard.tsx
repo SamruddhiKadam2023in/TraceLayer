@@ -19,7 +19,9 @@ export function MetricCard({ label, value, detail, tone = 'default' }: MetricCar
   return (
     <div className="rounded-lg border border-line bg-surface p-3">
       <dt className="text-xs text-fg-muted">{label}</dt>
-      <dd className={`mt-1 font-mono text-xl font-semibold tabular-nums ${TONE[tone]}`}>{value}</dd>
+      <dd className={`mt-1 text-xl font-semibold tracking-tight tabular-nums ${TONE[tone]}`}>
+        {value}
+      </dd>
       {detail && <dd className="mt-0.5 text-xs text-fg-subtle">{detail}</dd>}
     </div>
   );

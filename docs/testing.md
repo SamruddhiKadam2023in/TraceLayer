@@ -118,6 +118,19 @@ so a project without a description could not be created from the UI. The fronten
 fake API that accepted anything, and the backend tests never sent `null`. The API now accepts
 `null`, and a backend regression test covers it.
 
+## Accessibility
+
+`apps/e2e/tests/accessibility.spec.ts` runs axe-core (WCAG 2.1 A and AA rules, including
+colour contrast) in a real browser, in both themes, on:
+
+- the landing, sign-in, sign-up and privacy pages;
+- the dashboard, projects, incidents, workspace settings and system status;
+- a project's overview, new-endpoint editor, monitors, environments and dependency map;
+- a dialog.
+
+Any violation fails the run. It found one in Phase 18: white text on the dark theme's bright
+red danger button. The fix was a dark-on-red text token for that button.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main`, on every pull request, and on demand

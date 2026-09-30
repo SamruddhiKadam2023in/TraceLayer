@@ -268,7 +268,7 @@ export function AnalyticsView({
                 </caption>
                 <thead className="border-b border-line text-left text-xs text-fg-muted">
                   <tr>
-                    <th scope="col" className="px-4 py-2 font-medium">
+                    <th scope="col" className="w-[32%] px-4 py-2 font-medium">
                       Monitor
                     </th>
                     <th scope="col" className="px-3 py-2 font-medium">

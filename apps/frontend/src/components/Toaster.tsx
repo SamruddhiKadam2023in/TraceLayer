@@ -25,7 +25,7 @@ export function Toaster() {
           <div
             key={toast.id}
             role="status"
-            className="pointer-events-auto flex items-start gap-3 rounded-lg border border-line bg-surface p-3 shadow-lg"
+            className="animate-rise-in pointer-events-auto flex items-start gap-3 rounded-lg border border-line bg-surface p-3 shadow-lg"
           >
             <Icon className={`mt-0.5 size-4 shrink-0 ${className}`} aria-hidden="true" />
             <div className="min-w-0 flex-1 text-sm">

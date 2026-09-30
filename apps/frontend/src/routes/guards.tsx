@@ -15,6 +15,8 @@ export function RequireAuth() {
 
   if (status === 'unknown') return <FullPageLoader label="Restoring your session" />;
   if (status === 'anonymous') {
+    // The home page for visitors is the landing page; anything deeper asks them to sign in.
+    if (location.pathname === '/') return <Navigate to="/welcome" replace />;
     const state: RedirectState = { from: location.pathname + location.search };
     return <Navigate to="/login" replace state={state} />;
   }

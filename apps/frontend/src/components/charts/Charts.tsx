@@ -17,9 +17,14 @@ import {
 } from 'recharts';
 import type { ErrorPoint, LatencyPoint, MetricRange, StatusDistribution } from '@tracelayer/shared';
 import { useChartColors, type ChartColors } from '@/hooks/useChartColors';
-import { formatMs, formatTick, formatTooltipTime } from './chart-format';
+import { formatMs, formatMsTick, formatTick, formatTooltipTime } from './chart-format';
 
-function axes(colors: ChartColors, range: MetricRange, yFormat: (v: number) => string) {
+function axes(
+  colors: ChartColors,
+  range: MetricRange,
+  yFormat: (v: number) => string,
+  allowDecimals = true,
+) {
   const tick = { fill: colors.subtle, fontSize: 11 };
   return [
     <CartesianGrid key="grid" stroke={colors.grid} strokeDasharray="3 3" vertical={false} />,
@@ -31,7 +36,14 @@ function axes(colors: ChartColors, range: MetricRange, yFormat: (v: number) => s
       stroke={colors.grid}
       minTickGap={32}
     />,
-    <YAxis key="y" tickFormatter={yFormat} tick={tick} stroke={colors.grid} width={56} />,
+    <YAxis
+      key="y"
+      tickFormatter={yFormat}
+      tick={tick}
+      stroke={colors.grid}
+      width={56}
+      allowDecimals={allowDecimals}
+    />,
   ];
 }
 
@@ -54,7 +66,7 @@ export function LatencyChart({ points, range }: { points: LatencyPoint[]; range:
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={points} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-        {axes(colors, range, (v) => formatMs(v))}
+        {axes(colors, range, formatMsTick)}
         <Tooltip {...tooltipStyle(colors)} formatter={(v) => formatMs(v as number)} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Line
@@ -124,7 +136,7 @@ export function VolumeChart({ points, range }: { points: ErrorPoint[]; range: Me
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-        {axes(colors, range, (v) => String(v))}
+        {axes(colors, range, (v) => String(v), false)}
         <Tooltip {...tooltipStyle(colors)} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar

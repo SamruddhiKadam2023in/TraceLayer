@@ -206,7 +206,8 @@ export function EndpointForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <div className="flex gap-2">
+          {/* One row on wider screens; on phones, method + URL, then environment + Send. */}
+          <div className="flex flex-wrap gap-2 sm:flex-nowrap">
             <div className="w-32 shrink-0">
               <SelectField
                 label="Method"
@@ -216,7 +217,7 @@ export function EndpointForm({
                 {...register('method')}
               />
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 basis-[calc(100%-8.5rem)] sm:basis-0">
               <TextField
                 label="URL"
                 hideLabel
@@ -230,7 +231,7 @@ export function EndpointForm({
             </div>
             {onSend && (
               <>
-                <div className="w-36 shrink-0">
+                <div className="min-w-0 flex-1 sm:w-36 sm:flex-none">
                   <SelectField
                     label="Run in environment"
                     hideLabel

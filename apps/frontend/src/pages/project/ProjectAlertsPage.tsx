@@ -72,7 +72,8 @@ export function ProjectAlertsPage() {
                 <StatusBadge tone="healthy" label="Resolved" />
               )}
               <SeverityBadge severity={alert.severity} />
-              <div className="min-w-0 flex-1">
+              {/* A line of its own on phones; shares the row on wider screens. */}
+              <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
                 <p className="truncate text-sm">{alert.message}</p>
                 <p className="text-xs text-fg-subtle">
                   <Link

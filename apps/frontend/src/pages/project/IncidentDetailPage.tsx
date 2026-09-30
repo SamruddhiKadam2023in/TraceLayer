@@ -327,7 +327,7 @@ export function IncidentDetailPage() {
         <h3 id="incident-timeline" className="text-sm font-semibold">
           Timeline
         </h3>
-        <ol aria-label="Timeline" className="border-l border-line pl-0">
+        <ol aria-label="Timeline" className="mb-2 border-l border-line pl-0">
           {data.events.map((event) => (
             <TimelineEntry key={event.id} event={event} />
           ))}

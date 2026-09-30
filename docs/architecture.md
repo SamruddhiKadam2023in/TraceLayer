@@ -77,18 +77,53 @@ docker-compose.yml
 - **In Docker** the app is built to static files and served by nginx, which also reverse-proxies
   `/api` and `/socket.io` to the backend (`docker/nginx.conf`). Unknown paths fall back to
   `index.html` for client-side routing; hashed assets are cached for a year, the HTML shell never.
-- Routes are split into **public** (`/login`, `/register`, in `AuthLayout`) and **protected**
+- Routes are split into **public** (the landing page `/welcome`, `/privacy`, `/terms`, and
+  `/login`, `/register` in `AuthLayout`) and **protected**
   (everything else, in `AppLayout`, the persistent shell: top bar, collapsible sidebar, main
   content). See [Authentication](#authentication) for how the guards decide.
 - Signed-in routes also sit behind `RequireWorkspace`, which loads the user's workspaces and
   guarantees a current one. Users with none see the "create your first workspace" screen.
-- Screens so far: sign-in, sign-up, first-workspace onboarding, **Projects** (list and create),
-  the **Dashboard** (home page), a **project page** with Overview, Endpoints, Monitors,
-  Analytics, History, Environments and Settings tabs, the **endpoint
-  editor**, **System Status** (the live
-  `/api/health` report) and **Workspace settings** (rename, members, leave, delete). The top
-  bar holds the workspace switcher. Sidebar entries are added as each feature is built, so there
-  are no placeholder pages.
+- Screens:
+  - Public: the **landing page** (hero, features, how it works, a real dashboard preview, how to
+    try the demo), sign-in, sign-up, privacy and terms. Signed-out visitors to `/` land on it;
+    deeper links ask them to sign in.
+  - Signed in: first-workspace onboarding, the **Dashboard** (home page), **Projects**,
+    workspace-wide **Incidents**, **System Status** and **Workspace settings**.
+  - A **project page** with tabs: Overview, Endpoints, Monitors, Analytics, Incidents, Alerts,
+    Dependencies, History, Environments and Settings.
+  - Endpoints, monitors, analytics and dependencies belong to a project, so they are project
+    tabs rather than sidebar entries.
+
+#### UI conventions (spec §5–7, §43–46)
+
+- **Typography.** Inter for everything people read, including dashboard metrics (tabular digits
+  keep columns aligned). JetBrains Mono only for technical values: URLs, methods, JSON, ids,
+  status codes, timestamps in tables, variables.
+- **States.** Every data panel has a skeleton while loading, an error with Retry, and an empty
+  state that says what to do next. No blank screens.
+- **Responsive.**
+  - The sidebar collapses on desktop and becomes a drawer on phones.
+  - Rows of badges and text wrap so titles keep a line of their own on narrow screens.
+  - Wide tables scroll inside their own box.
+  - The request builder's URL row wraps on phones.
+  - Every page was checked at 390 px wide, and none scrolls sideways.
+- **Dark mode.** Light, dark or system, persisted and applied before first paint (by
+  `/theme-init.js`, a file rather than an inline script so the Content-Security-Policy can
+  forbid inline scripts). Colours are tokens with a light and a dark value; text on coloured
+  buttons has its own token (e.g. `--tl-fail-fg`) so contrast holds in both themes.
+- **Status never relies on colour.** Health, severity, incident status, the live indicator and
+  manual/inferred edges all carry text or shape as well: "Healthy ✓", "Failing ×", a dashed
+  border for inferred.
+- **Accessibility.**
+  - Semantic landmarks and headings, a skip link, and labels for every control.
+  - Dialogs trap focus and return it on close.
+  - Visible focus rings.
+  - Charts carry a text summary, and live notifications are announced to screen readers.
+  - axe-core checks every main page in both themes in the end-to-end suite (see
+    [testing](testing.md)).
+- **Motion.** Only where it explains a change: dialogs, menus and notifications fade and rise
+  in over 120–160 ms, skeletons pulse, the live dot pulses while connecting. Everything is
+  switched off when the system asks to reduce motion.
 
 ### Backend — `apps/backend`
 

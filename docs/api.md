@@ -64,7 +64,7 @@ carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `
 | -------------------------------------- | --------------------------------- |
 | `POST /auth/login`                     | 10 **failed** attempts per 15 min |
 | `POST /auth/register`                  | 5 per hour                        |
-| `POST /auth/refresh`                   | 60 per 15 min                     |
+| `POST /auth/refresh`                   | 300 per 15 min                    |
 | `POST /workspaces`                     | 20 per hour, per user             |
 | `POST /workspaces/:id/members`         | 30 per 15 min, per user           |
 | `POST /projects`                       | 30 per hour, per user             |

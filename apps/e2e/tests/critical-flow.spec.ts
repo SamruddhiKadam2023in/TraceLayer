@@ -37,7 +37,10 @@ test.afterEach(async ({ request }) => {
 
 /** A project tab (Endpoints, Monitors, …) in the project header. */
 const openTab = (page: Page, name: string) =>
-  page.getByRole('navigation').getByRole('link', { name, exact: true }).click();
+  page
+    .getByRole('navigation', { name: 'Project' })
+    .getByRole('link', { name, exact: true })
+    .click();
 
 test('critical flow: from registration to a resolved incident', async ({ browser }) => {
   await test.step('Register', async () => {

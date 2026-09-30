@@ -85,7 +85,8 @@ export function AlertRulesSection({ monitorId, workspaceId, canManage }: AlertRu
               data-testid={`rule-${rule.name}`}
               className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3"
             >
-              <div className="min-w-0 flex-1">
+              {/* A line of its own on phones; shares the row on wider screens. */}
+              <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
                 <p className="flex items-center gap-2 text-sm font-medium">
                   {rule.name}
                   <SeverityBadge severity={rule.severity} />

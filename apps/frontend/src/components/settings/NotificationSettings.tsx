@@ -161,7 +161,8 @@ export function NotificationSettings({ workspace }: { workspace: WorkspaceSummar
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3"
               >
                 <Mail className="size-4 text-fg-subtle" aria-hidden="true" />
-                <div className="min-w-0 flex-1">
+                {/* A line of its own on phones; shares the row on wider screens. */}
+                <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
                   <p className="text-sm font-medium">
                     {channel.name}{' '}
                     {!channel.enabled && (

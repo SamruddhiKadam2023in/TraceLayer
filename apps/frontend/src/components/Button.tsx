@@ -7,7 +7,7 @@ const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent text-accent-fg hover:opacity-90',
   secondary: 'border border-line bg-surface text-fg hover:bg-surface-2',
   ghost: 'text-fg-muted hover:bg-surface-2 hover:text-fg',
-  danger: 'bg-fail text-white hover:opacity-90',
+  danger: 'bg-fail text-fail-fg hover:opacity-90',
 };
 
 interface ButtonProps extends ComponentProps<'button'> {

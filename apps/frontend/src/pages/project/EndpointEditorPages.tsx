@@ -148,7 +148,7 @@ export function EndpointDetailPage() {
     <div>
       <BackLink />
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <MethodBadge method={current.method} />
+        <MethodBadge method={current.method} aligned={false} />
         <h2 className="min-w-0 truncate text-base font-semibold">{current.name}</h2>
         <p className="text-xs text-fg-subtle">
           Updated {formatDate(current.updatedAt)}

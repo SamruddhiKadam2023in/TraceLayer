@@ -40,7 +40,7 @@ export function WorkspaceSwitcher() {
       {open && (
         <div
           id={listId}
-          className="absolute left-0 z-30 mt-1 w-72 overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
+          className="animate-rise-in absolute left-0 z-30 mt-1 w-72 overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
         >
           <p className="px-3 pt-2.5 pb-1 text-xs font-medium text-fg-subtle">Workspaces</p>
           <ul className="max-h-72 overflow-y-auto p-1">

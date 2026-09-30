@@ -60,7 +60,7 @@ export function UserMenu() {
       {open && (
         <div
           id={panelId}
-          className="absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
+          className="animate-rise-in absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
         >
           <div className="border-b border-line px-3 py-2.5">
             <p className="truncate text-sm font-medium">{user.name}</p>

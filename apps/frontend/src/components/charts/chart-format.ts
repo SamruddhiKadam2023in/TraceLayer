@@ -26,6 +26,13 @@ export function formatTooltipTime(iso: string): string {
   });
 }
 
+/** Axis ticks: compact, so labels never wrap in the narrow axis ("500ms", "1.2s"). */
+export function formatMsTick(value: number): string {
+  if (value < 1000) return `${Math.round(value)}ms`;
+  const seconds = value / 1000;
+  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
+}
+
 export function formatMs(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—';
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} s`;

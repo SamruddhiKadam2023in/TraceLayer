@@ -62,6 +62,25 @@ describe('session restore and route protection', () => {
       screen.getByRole('button', { name: 'Account menu for Ada Lovelace' }),
     ).toBeInTheDocument();
   });
+
+  it('waits and retries when session renewal is rate limited, instead of signing out', async () => {
+    let attempts = 0;
+    const fake = installFakeApi({
+      'POST /auth/refresh': () =>
+        ++attempts === 1
+          ? [429, apiError('RATE_LIMITED', 'Too many session refreshes.')]
+          : [200, ok(makeSession())],
+      'GET /workspaces': ONE_WORKSPACE,
+      ...metricsHandlers(),
+    });
+    const router = renderApp('/status');
+
+    expect(
+      await screen.findByRole('heading', { name: 'System status' }, { timeout: 6000 }),
+    ).toBeInTheDocument();
+    expect(fake.callsTo('POST', '/auth/refresh')).toHaveLength(2);
+    expect(router.state.location.pathname).toBe('/status');
+  }, 10_000);
 });
 
 describe('sign in', () => {

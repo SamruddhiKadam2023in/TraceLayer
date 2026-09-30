@@ -4,7 +4,7 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 17 of 20 (Demo data) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 18 of 20 (UI polish) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
 > and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
@@ -61,6 +61,7 @@ monitoring and investigation tool, not a Postman clone.
 | Incidents: severity, status, assignment, comments, timeline, auto-resolution            | ✅ Phase 11 |
 | Real-time updates (Socket.IO): live monitor status, incidents, dashboard, notifications | ✅ Phase 12 |
 | API dependency map (React Flow): manual and inferred dependencies, live node health     | ✅ Phase 13 |
+| Landing page, workspace-wide incidents, responsive layout, accessibility checks (axe)   | ✅ Phase 18 |
 
 ## Architecture
 
@@ -271,7 +272,7 @@ In place so far:
   to `/api/auth`. Only an HMAC of each token is stored. Every refresh rotates the token, and
   reusing an old one revokes the whole session, which cuts off a stolen token.
 - **Rate limits** (stored in Redis, shared across API instances): 10 failed sign-ins per 15 min,
-  5 registrations per hour, 60 refreshes per 15 min, per client IP; 20 new workspaces per hour
+  5 registrations per hour, 300 refreshes per 15 min, per client IP; 20 new workspaces per hour
   and 30 member additions per 15 min, per user.
 - **Secret variables** are encrypted at rest with AES-256-GCM (`ENCRYPTION_KEY`) and are
   write-only: no endpoint ever returns them, not even to owners. A database CHECK constraint

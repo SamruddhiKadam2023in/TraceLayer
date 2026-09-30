@@ -11,9 +11,12 @@ const TONES: Record<HttpMethod, string> = {
   OPTIONS: 'text-fg-muted',
 };
 
-export function MethodBadge({ method }: { method: HttpMethod }) {
+/** `aligned` gives every method the same width, so names line up in lists. */
+export function MethodBadge({ method, aligned = true }: { method: HttpMethod; aligned?: boolean }) {
   return (
-    <span className={`inline-block w-16 font-mono text-xs font-semibold ${TONES[method]}`}>
+    <span
+      className={`inline-block font-mono text-xs font-semibold ${aligned ? 'w-16' : ''} ${TONES[method]}`}
+    >
       {method}
     </span>
   );

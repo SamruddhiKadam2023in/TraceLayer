@@ -63,14 +63,18 @@ export function Modal({ title, description, onClose, children }: ModalProps) {
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[12vh]">
-      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
+      <div
+        className="animate-fade-in fixed inset-0 bg-black/50"
+        aria-hidden="true"
+        onClick={onClose}
+      />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        className="relative w-full max-w-md rounded-lg border border-line bg-surface shadow-xl"
+        className="animate-rise-in relative w-full max-w-md rounded-lg border border-line bg-surface shadow-xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div>

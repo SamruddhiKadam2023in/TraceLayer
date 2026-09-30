@@ -256,7 +256,9 @@ export function createAuthRateLimiters() {
     refresh: createLimiter({
       name: 'refresh',
       windowMs: 15 * MINUTE_MS,
-      limit: 60,
+      // Every page load renews the session, and people behind one office IP share this budget.
+      // Refresh tokens are 256-bit random values, so this guards against abuse, not guessing.
+      limit: 300,
       message: 'Too many session refreshes. Try again in a few minutes.',
     }),
   };

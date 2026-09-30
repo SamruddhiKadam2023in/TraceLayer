@@ -18,17 +18,24 @@ import { ProjectMonitorsPage } from '@/pages/project/ProjectMonitorsPage';
 import { ProjectAnalyticsPage } from '@/pages/project/ProjectAnalyticsPage';
 import { ProjectAlertsPage } from '@/pages/project/ProjectAlertsPage';
 import { ProjectIncidentsPage } from '@/pages/project/ProjectIncidentsPage';
+import { IncidentsPage } from '@/pages/IncidentsPage';
 import { IncidentDetailPage } from '@/pages/project/IncidentDetailPage';
 import { ProjectDependenciesPage } from '@/pages/project/ProjectDependenciesPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { MonitorCreatePage, MonitorDetailPage } from '@/pages/project/MonitorPages';
 import { EndpointCreatePage, EndpointDetailPage } from '@/pages/project/EndpointEditorPages';
+import { LandingPage } from '@/pages/LandingPage';
+import { PrivacyPage, TermsPage } from '@/pages/LegalPages';
 import { RedirectIfAuthenticated, RequireAuth, RequireWorkspace } from './guards';
 
 export const routes: RouteObject[] = [
   {
     element: <RootLayout />,
     children: [
+      // Public pages, for everyone.
+      { path: '/welcome', element: <LandingPage /> },
+      { path: '/privacy', element: <PrivacyPage /> },
+      { path: '/terms', element: <TermsPage /> },
       {
         element: <RedirectIfAuthenticated />,
         children: [
@@ -52,6 +59,7 @@ export const routes: RouteObject[] = [
                 children: [
                   { path: '/', element: <DashboardPage /> },
                   { path: '/projects', element: <ProjectsPage /> },
+                  { path: '/incidents', element: <IncidentsPage /> },
                   {
                     path: '/projects/:projectId',
                     element: <ProjectLayout />,

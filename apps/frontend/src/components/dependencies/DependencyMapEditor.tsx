@@ -386,7 +386,7 @@ export function DependencyMapEditor({
             <h3 id="map-nodes" className="font-semibold">
               Nodes ({nodes.length})
             </h3>
-            <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto">
+            <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
               {nodes.map((n) => (
                 <li key={n.id}>
                   <button
