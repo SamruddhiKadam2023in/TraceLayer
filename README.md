@@ -4,7 +4,7 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 15 of 20 (Testing) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 16 of 20 (CI/CD) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
 > and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
@@ -178,7 +178,9 @@ Integration tests use separate test databases, so development data is never touc
 end-to-end test uses the Microsoft Edge that ships with Windows, so no browser download is
 needed. Details, settings and what each suite covers: [docs/testing.md](docs/testing.md).
 
-A GitHub Actions pipeline running all of this arrives in Phase 16.
+Every push and pull request runs all of this in GitHub Actions: lint, formatting, type check,
+unit, integration and frontend tests, the builds, and then the end-to-end test against the
+Docker stack. See [docs/testing.md](docs/testing.md#continuous-integration).
 
 ## API
 

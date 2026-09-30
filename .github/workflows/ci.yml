@@ -1,0 +1,149 @@
+# Continuous integration (spec §50): every push and pull request is linted, type-checked,
+# tested at every level and built. Any failure fails the workflow.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch or pull request supersedes a running workflow.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+  # Test databases (created and migrated by the suites themselves) on the service below.
+  TEST_DATABASE_URL: postgresql://tracelayer:tracelayer@localhost:5434/tracelayer_test?schema=public
+  WORKER_TEST_DATABASE_URL: postgresql://tracelayer:tracelayer@localhost:5434/tracelayer_worker_test?schema=public
+  REDIS_URL: redis://localhost:6379
+
+jobs:
+  checks:
+    name: Lint, type-check, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tracelayer
+          POSTGRES_PASSWORD: tracelayer
+          POSTGRES_DB: tracelayer
+        ports: ['5434:5432']
+        options: >-
+          --health-cmd "pg_isready -U tracelayer"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version from package.json "packageManager"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate the Prisma client
+        run: pnpm db:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Unit tests (shared logic, SSRF and request execution)
+        run: |
+          pnpm --filter @tracelayer/shared test
+          pnpm --filter @tracelayer/executor test
+
+      - name: Integration tests (API and worker, against PostgreSQL and Redis)
+        run: |
+          pnpm --filter @tracelayer/backend test
+          pnpm --filter @tracelayer/worker test
+
+      - name: Frontend tests
+        run: pnpm --filter @tracelayer/frontend test
+
+      - name: Build frontend
+        run: |
+          pnpm --filter @tracelayer/shared build
+          pnpm --filter @tracelayer/frontend build
+
+      - name: Build backend and worker
+        run: |
+          pnpm --filter @tracelayer/db build
+          pnpm --filter @tracelayer/executor build
+          pnpm --filter @tracelayer/backend build
+          pnpm --filter @tracelayer/worker build
+
+  e2e:
+    name: End-to-end (Docker stack + Playwright)
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @tracelayer/e2e exec playwright install --with-deps chromium
+
+      # The same stack as local development: postgres, redis, API, worker, nginx + app, Mailpit.
+      # It runs with the public development secrets (ALLOW_DEV_SECRETS defaults to true in
+      # docker-compose.yml), which is fine for a throwaway CI stack.
+      - name: Start the stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: End-to-end tests
+        run: pnpm test:e2e
+        env:
+          E2E_BASE_URL: http://localhost:8080
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose logs --no-color --tail 200 backend worker frontend
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/e2e/playwright-report
+            apps/e2e/test-results
+          retention-days: 7
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v

@@ -117,3 +117,54 @@ had missed. The new-project form sends `null` for an empty description, and the 
 so a project without a description could not be created from the UI. The frontend test used a
 fake API that accepted anything, and the backend tests never sent `null`. The API now accepts
 `null`, and a backend regression test covers it.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main`, on every pull request, and on demand
+(spec §50). Any failing step fails the workflow.
+
+**Job 1: checks** (PostgreSQL and Redis run as service containers):
+
+1. Install dependencies from the lockfile (`--frozen-lockfile`), with the pnpm store cached.
+2. Generate the Prisma client.
+3. Lint, then check formatting.
+4. Type check every package.
+5. Unit tests: shared logic, SSRF rules and request execution.
+6. Integration tests: API and worker, against the service databases.
+7. Frontend tests.
+8. Build the frontend.
+9. Build the backend and worker (with the packages they depend on).
+
+**Job 2: e2e** runs only after the checks pass:
+
+- It starts the same Docker Compose stack as local development and waits until every service
+  is healthy.
+- It installs Playwright's Chromium and runs the critical-flow test.
+- On failure, it prints the stack's logs and uploads the Playwright report, screenshots and
+  trace as an artifact (kept for 7 days).
+- The stack is always torn down at the end.
+
+**Other settings:**
+
+- A newer push to the same branch cancels a run in progress.
+- The workflow token is read-only.
+- Dependabot opens weekly update pull requests for npm packages (minor and patch updates
+  grouped), GitHub Actions and the Docker base images. CI checks each one.
+
+**Running the same checks locally:**
+
+```bash
+pnpm infra:up
+pnpm db:generate && pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build
+docker compose up -d --build --wait && pnpm test:e2e
+```
+
+**Status badge:** once the repository is on GitHub, add this line to the top of the README,
+with the real owner and repository name:
+
+```markdown
+[![CI](https://github.com/<owner>/<repo>/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/<repo>/actions/workflows/ci.yml)
+```
+
+To block merges that break the build, protect `main` and require the **Lint, type-check, test,
+build** and **End-to-end** checks (GitHub → Settings → Branches).
