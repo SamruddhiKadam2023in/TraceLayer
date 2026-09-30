@@ -19,6 +19,7 @@
     "db:generate": "pnpm --filter @tracelayer/db generate",
     "db:migrate": "pnpm --filter @tracelayer/db migrate:dev",
     "db:deploy": "pnpm --filter @tracelayer/db migrate:deploy",
+    "seed:demo": "pnpm --filter @tracelayer/backend seed:demo",
     "infra:up": "docker compose up -d postgres redis",
     "infra:down": "docker compose stop postgres redis"
   },

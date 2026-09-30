@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet } from 'react-router';
 import { Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import { DemoBanner } from '@/components/DemoBadge';
 import { Logo } from '@/components/Logo';
 import { LiveIndicator } from '@/components/realtime/LiveIndicator';
 import { RealtimeConnector } from '@/components/realtime/RealtimeConnector';
@@ -10,12 +11,14 @@ import { Toaster } from '@/components/Toaster';
 import { UserMenu } from '@/components/UserMenu';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 import { useUiStore } from '@/stores/ui.store';
+import { useCurrentWorkspace } from '@/stores/workspace.store';
 
 /** Persistent application shell: top bar, collapsible sidebar, main content. */
 export function AppLayout() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const workspace = useCurrentWorkspace();
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -70,6 +73,7 @@ export function AppLayout() {
           <UserMenu />
         </div>
       </header>
+      {workspace.isDemo && <DemoBanner />}
 
       <div className="flex min-h-0 flex-1">
         <aside

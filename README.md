@@ -4,7 +4,7 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 16 of 20 (CI/CD) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 17 of 20 (Demo data) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
 > and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
@@ -29,6 +29,7 @@ caused the failure.
 - [Architecture](#architecture)
 - [Technology stack](#technology-stack)
 - [Local development](#local-development)
+- [Demo data](#demo-data)
 - [Testing and code quality](#testing-and-code-quality)
 - [API](#api)
 - [Security](#security)
@@ -156,6 +157,50 @@ on your machine. To use a different port, change `POSTGRES_PORT` and `DATABASE_U
 | `pnpm test`                    | Run all test suites                        |
 | `pnpm infra:up` / `infra:down` | Start / stop PostgreSQL and Redis          |
 | `pnpm db:migrate`              | Create and apply a migration (development) |
+
+## Demo data
+
+A fresh install is empty. To explore TraceLayer with a week of history, seed the demo workspace:
+
+```bash
+docker compose exec backend node apps/backend/dist/scripts/seed-demo.js   # Docker stack
+pnpm seed:demo                                                            # apps on your machine
+```
+
+- **Without options**, it creates the account `demo@demo.tracelayer.local` and prints a random
+  password. The password changes on every run, so there is never a known, shared demo password.
+- **With `--owner you@example.com`**, it adds the demo workspace to your own existing account.
+- **Running it again** replaces the demo workspace, so its history always ends "now".
+
+It creates a **Demo Workspace** (spec §52) with:
+
+- **Projects:** E-Commerce API, Payment API and Authentication API, with environments,
+  encrypted secret variables and 9 endpoints.
+- **Real targets:** the endpoints point at real public demo APIs (dummyjson.com, and httpbin.org
+  echoing payment requests), so every request can really be sent.
+- **Monitors:** 6 monitors, each with an alert rule, and a week of checks (about 11,000 runs)
+  with a daily latency pattern, rare network blips, a catalogue outage, a search slowdown and
+  outages of payments and sign-in.
+- **Incidents:** the 5 incidents those caused, with full timelines. People acknowledge,
+  investigate and comment, and incidents resolve automatically. One is still being
+  investigated.
+- **Also:** request history, a dependency map with manual and inferred dependencies, two demo
+  teammates (a member and a viewer), and a disabled demo notification channel.
+
+**It's always clearly marked.**
+
+- The workspace carries a **Demo** badge in the workspace switcher.
+- Every page shows a banner saying its data is generated, not measured.
+- Real workspaces never show either.
+
+**Why the numbers are consistent.** The history is not made up at random. Each generated check is
+judged by the same code as real checks, and each alert rule is replayed over the checks exactly
+as the worker would. So every incident, alert and rule state is one the platform would really
+have produced from those runs. The metrics are then computed from the stored runs, like any
+other data.
+
+**Why the monitors are paused.** Demo monitors start paused, so the generated history stays as
+generated. Resume one, or press Run now, and it checks the public API for real.
 
 ## Testing and code quality
 

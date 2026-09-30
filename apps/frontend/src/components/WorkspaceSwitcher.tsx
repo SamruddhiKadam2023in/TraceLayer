@@ -5,6 +5,7 @@ import { useDismiss } from '@/hooks/useDismiss';
 import { useCurrentWorkspace, useWorkspaceStore } from '@/stores/workspace.store';
 import { CreateWorkspaceForm } from './CreateWorkspaceForm';
 import { Modal } from './Modal';
+import { DemoBadge } from './DemoBadge';
 
 /** Top-bar control showing the current workspace, for switching or creating one. */
 export function WorkspaceSwitcher() {
@@ -27,11 +28,12 @@ export function WorkspaceSwitcher() {
         type="button"
         aria-expanded={open}
         aria-controls={listId}
-        aria-label={`Current workspace: ${current.name}. Switch workspace`}
+        aria-label={`Current workspace: ${current.name}${current.isDemo ? ' (demo)' : ''}. Switch workspace`}
         onClick={() => setOpen((o) => !o)}
         className="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium hover:bg-surface-2"
       >
         <span className="truncate">{current.name}</span>
+        {current.isDemo && <DemoBadge />}
         <ChevronsUpDown className="size-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />
       </button>
 
@@ -55,7 +57,10 @@ export function WorkspaceSwitcher() {
                   className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-2"
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate">{w.name}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate">{w.name}</span>
+                      {w.isDemo && <DemoBadge />}
+                    </span>
                     <span className="block text-xs text-fg-subtle">
                       {ROLE_LABELS[w.role]} · {w.memberCount}{' '}
                       {w.memberCount === 1 ? 'member' : 'members'}

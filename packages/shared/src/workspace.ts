@@ -87,6 +87,8 @@ export interface WorkspaceSummary {
   /** The requesting user's role in this workspace. */
   role: WorkspaceRole;
   memberCount: number;
+  /** Generated demo data (see the demo seed); the app labels it clearly. */
+  isDemo: boolean;
   createdAt: string;
 }
 

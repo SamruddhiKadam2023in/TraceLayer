@@ -17,6 +17,7 @@ function toSummary(
     name: workspace.name,
     role,
     memberCount: workspace._count.members,
+    isDemo: workspace.isDemo,
     createdAt: workspace.createdAt.toISOString(),
   };
 }

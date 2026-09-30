@@ -71,6 +71,8 @@ enum WorkspaceRole {
 model Workspace {
   id        String   @id @default(uuid()) @db.Uuid
   name      String   @db.VarChar(100)
+  /// Created by the demo seed (pnpm seed:demo): generated data, shown with a Demo badge.
+  isDemo    Boolean  @default(false) @map("is_demo")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
