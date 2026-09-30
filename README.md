@@ -13,6 +13,7 @@ caused the failure.
 - [Product features](#product-features)
 - [Architecture](#architecture)
 - [Technology stack](#technology-stack)
+- [Project structure](#project-structure)
 - [System design](#system-design)
 - [Database schema](#database-schema)
 - [API documentation](#api-documentation)
@@ -146,6 +147,78 @@ More detail, including the repository layout and each app's internals:
 | Queue    | Redis 7, BullMQ                                                                                                                            |
 | Testing  | Jest + Supertest (packages, backend, worker), Vitest + Testing Library (frontend), Playwright + axe-core (end-to-end and accessibility)    |
 | Tooling  | pnpm workspaces, ESLint 9, Prettier 3, Docker Compose, GitHub Actions, Dependabot                                                          |
+
+## Project structure
+
+A pnpm monorepo: three runnable apps, three shared packages, and the end-to-end tests.
+
+```text
+TraceLayer/
+├── apps/
+│   ├── frontend/                 React single-page app
+│   │   ├── public/               Static files (favicon, landing-page screenshots)
+│   │   └── src/
+│   │       ├── pages/            One component per route (dashboard, projects, incidents, …)
+│   │       ├── components/       Reusable UI: forms, charts, badges, dependency map, …
+│   │       ├── layouts/          App shell, sidebar and project tabs
+│   │       ├── routes/           React Router configuration
+│   │       ├── services/         API clients (axios) and the Socket.IO connection
+│   │       ├── stores/           Zustand state: auth, workspace, theme, toasts
+│   │       ├── hooks/            Data loading, live updates, chart colours
+│   │       └── test/             Vitest + Testing Library page tests, with a fake API and socket
+│   │
+│   ├── backend/                  Express REST API + Socket.IO server
+│   │   ├── src/
+│   │   │   ├── routes/           URL → middleware → controller
+│   │   │   ├── controllers/      Validate input (Zod), call a service, send the response
+│   │   │   ├── services/         Business rules, permission checks, database access
+│   │   │   ├── middleware/       Authentication, workspace/project access, rate limits, timeouts, errors
+│   │   │   ├── sockets/          Real-time server (Socket.IO with the Redis adapter)
+│   │   │   ├── lib/              Prisma, Redis, BullMQ queues, row locks
+│   │   │   ├── config/           Environment variables, validated at startup
+│   │   │   ├── utils/            Errors, logger with redaction, secret encryption
+│   │   │   ├── demo/             Demo-workspace generator
+│   │   │   ├── scripts/          seed-demo command
+│   │   │   ├── app.ts            Express app: security headers, CORS, request IDs, routes
+│   │   │   └── server.ts         HTTP server start-up and graceful shutdown
+│   │   └── tests/                Jest + Supertest integration tests (real PostgreSQL and Redis)
+│   │
+│   ├── worker/                   Background process (BullMQ)
+│   │   ├── src/
+│   │   │   ├── checks/           Runs a monitor check and stores the result
+│   │   │   ├── alerts/           Evaluates alert rules, opens and resolves incidents
+│   │   │   ├── notifications/    Sends alert emails (nodemailer)
+│   │   │   ├── scheduling/       Monitor schedules and daily maintenance (old-run clean-up)
+│   │   │   ├── realtime/         Publishes live events through Redis
+│   │   │   └── index.ts          Start-up: queue workers, heartbeat, graceful shutdown
+│   │   └── tests/                Jest integration tests
+│   │
+│   └── e2e/                      Playwright end-to-end and accessibility (axe) tests
+│
+├── packages/
+│   ├── db/                       @tracelayer/db: Prisma schema, migrations, incident lifecycle
+│   │   └── prisma/               schema.prisma and SQL migrations
+│   ├── shared/                   @tracelayer/shared: types, Zod schemas, permissions, metric rules
+│   └── executor/                 @tracelayer/executor: SSRF-safe HTTP request execution
+│
+├── docker/                       nginx config and security headers for the frontend container
+├── docs/                         Architecture, API, database, security, monitoring, testing, deployment
+├── .github/                      CI workflow (GitHub Actions) and Dependabot settings
+├── Dockerfile                    Multi-stage build for the backend, worker and frontend images
+├── docker-compose.yml            The full stack: PostgreSQL, Redis, backend, worker, frontend, Mailpit
+├── .env.example                  Every setting, with development defaults
+├── package.json                  Workspace scripts (dev, build, test, lint, …)
+└── pnpm-workspace.yaml           Declares apps/* and packages/* as workspace packages
+```
+
+**How the pieces depend on each other:**
+
+- The **frontend** uses `shared` only, for types, validation and the permission table, so the
+  forms and the API validate input with the same rules.
+- The **backend** and **worker** both use `db`, `shared` and `executor`. They share one schema,
+  one set of rules, and one SSRF-protected way to send requests.
+- The **backend and worker never call each other directly.** They communicate through Redis
+  (job queues and events) and PostgreSQL.
 
 ## System design
 

@@ -86,16 +86,21 @@ The spec's three flows (§55) map onto this as:
 ```text
 apps/
   frontend/   React 19 + Vite 6 + Tailwind 4 SPA
-  backend/    Express 5 REST API
+  backend/    Express 5 REST API and Socket.IO server
   worker/     BullMQ worker process
+  e2e/        Playwright end-to-end and accessibility tests
 packages/
-  db/         Prisma schema, migrations and the generated client (@tracelayer/db)
-  shared/     Types and constants used by all apps (@tracelayer/shared)
-docker/       nginx config for the frontend container
+  db/         Prisma schema, migrations, generated client, incident lifecycle (@tracelayer/db)
+  shared/     Types, Zod schemas, permissions and rules used by all apps (@tracelayer/shared)
+  executor/   SSRF-safe HTTP request execution and secret encryption (@tracelayer/executor)
+docker/       nginx config and security headers for the frontend container
 docs/         Specification and technical documentation
-Dockerfile    Multi-target build: backend, worker, frontend
+.github/      CI workflow and Dependabot settings
+Dockerfile    Multi-stage build: backend, worker, frontend
 docker-compose.yml
 ```
+
+The [README](../README.md#project-structure) shows each app's folders in more detail.
 
 ## Components
 
