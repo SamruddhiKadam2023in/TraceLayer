@@ -6,19 +6,8 @@
     <meta name="description" content="TraceLayer — API reliability and observability platform" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>TraceLayer</title>
-    <script>
-      // Apply the persisted theme before first paint to avoid a light/dark flash.
-      (function () {
-        try {
-          var stored = JSON.parse(localStorage.getItem('tracelayer-theme') || '{}');
-          var pref = (stored.state && stored.state.theme) || 'system';
-          var dark =
-            pref === 'dark' ||
-            (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-          document.documentElement.classList.toggle('dark', dark);
-        } catch (e) {}
-      })();
-    </script>
+    <!-- Blocking on purpose: sets the theme before first paint. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

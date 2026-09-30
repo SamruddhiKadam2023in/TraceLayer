@@ -9,6 +9,7 @@ import { closeMonitorQueue } from './lib/monitor-queue';
 import { closeNotificationQueue } from './lib/notification-queue';
 import { closeConnectionPools } from '@tracelayer/executor';
 import { setRealtimeServer } from './lib/realtime';
+import { applyServerTimeouts } from './middleware/timeout';
 import { createRealtimeServer } from './sockets/realtime-server';
 
 async function main(): Promise<void> {
@@ -18,6 +19,15 @@ async function main(): Promise<void> {
   });
 
   const server = createServer(createApp());
+  applyServerTimeouts(server);
+  if (env.NODE_ENV === 'production') {
+    if (env.ALLOW_PRIVATE_NETWORK_TARGETS) {
+      logger.warn('ALLOW_PRIVATE_NETWORK_TARGETS is on: SSRF protection is disabled');
+    }
+    if (env.ALLOW_DEV_SECRETS) {
+      logger.warn('ALLOW_DEV_SECRETS is on: development secrets are accepted (local stack only)');
+    }
+  }
   // Pub/sub needs dedicated connections; they reconnect on their own if Redis restarts.
   const pub = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
   const sub = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });

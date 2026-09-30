@@ -1,6 +1,7 @@
 import path from 'node:path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { findInsecureSecrets } from '@tracelayer/shared';
 
 // Load .env from the package dir or the monorepo root. Existing process env always wins,
 // so container/platform-provided values are never overridden by a stray file.
@@ -36,12 +37,12 @@ const envSchema = z.object({
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
   /** Mark auth cookies Secure. Defaults to true in production; the local Docker stack serves plain HTTP. */
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
+  /** Redis key prefix for BullMQ queues; must match the worker's. */
+  QUEUE_PREFIX: z.string().min(1).default('tracelayer'),
   /**
    * Let executed requests reach private, loopback and link-local addresses (SSRF protection
    * off). Only for local development against APIs on your own machine. Never in production.
    */
-  /** Redis key prefix for BullMQ queues; must match the worker's. */
-  QUEUE_PREFIX: z.string().min(1).default('tracelayer'),
   ALLOW_PRIVATE_NETWORK_TARGETS: z
     .enum(['true', 'false'])
     .default('false')
@@ -52,6 +53,14 @@ const envSchema = z.object({
       (v) => Buffer.from(v, 'base64').length === 32,
       'ENCRYPTION_KEY must be 32 bytes, base64',
     ),
+  /**
+   * Accept the public development secrets from .env.example in production. Only the local
+   * Docker stack sets this; a real deployment must provide its own secrets.
+   */
+  ALLOW_DEV_SECRETS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -62,6 +71,18 @@ function loadEnv(): Env {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`);
     // Logger depends on env, so fail loudly on stderr before anything else starts.
     console.error(`Invalid environment configuration:\n${issues.join('\n')}`);
+    process.exit(1);
+  }
+  const insecure = findInsecureSecrets({
+    JWT_SECRET: parsed.data.JWT_SECRET,
+    JWT_REFRESH_SECRET: parsed.data.JWT_REFRESH_SECRET,
+    ENCRYPTION_KEY: parsed.data.ENCRYPTION_KEY,
+  });
+  if (insecure.length && parsed.data.NODE_ENV === 'production' && !parsed.data.ALLOW_DEV_SECRETS) {
+    console.error(
+      `Refusing to start in production with insecure secrets: ${insecure.join(', ')}.\n` +
+        'Generate new values (see .env.example), or set ALLOW_DEV_SECRETS=true for a local stack.',
+    );
     process.exit(1);
   }
   return parsed.data;

@@ -27,6 +27,16 @@ describe('isBlockedAddress', () => {
     '::ffff:7f00:1', // the same, in hex form
     '::ffff:a9fe:a9fe', // mapped 169.254.169.254
     '64:ff9b::10.0.0.1', // NAT64 of a private address
+    // Phase 14: other spellings and IPv6 transition formats that carry an internal IPv4.
+    '0:0:0:0:0:ffff:7f00:1', // mapped loopback, fully expanded
+    '::ffff:0:7f00:1', // IPv4-translated (SIIT) form
+    '64:ff9b:0:0:0:0:7f00:1', // NAT64 of 127.0.0.1, fully expanded
+    '64:ff9b:1::a00:1', // local-use NAT64
+    '::127.0.0.1', // deprecated IPv4-compatible form
+    '::7f00:1', // the same, in hex
+    '2002:7f00:1::', // 6to4 of 127.0.0.1
+    '2002:a9fe:a9fe::1', // 6to4 of the metadata address
+    '2001:0:4136:e378:8000:63bf:3fff:fdd2', // Teredo
   ])('blocks %s', (address) => {
     expect(isBlockedAddress(address)).toBe(true);
   });
@@ -38,6 +48,7 @@ describe('isBlockedAddress', () => {
     '93.184.216.34',
     '2606:4700:4700::1111',
     '::ffff:8.8.8.8',
+    '2002:808:808::1', // 6to4 of a public address
   ])('allows public %s', (address) => {
     expect(isBlockedAddress(address)).toBe(false);
   });
@@ -63,6 +74,12 @@ describe('assertAllowedUrl', () => {
     'http://0x7f.1/', // hex IPv4, normalised to 127.0.0.1 by the URL parser
     'http://2130706433/', // decimal IPv4 for 127.0.0.1
     'http://localhost./', // trailing dot
+    'http://0177.0.0.1/', // octal IPv4
+    'http://127.1/', // short IPv4
+    'http://0.0.0.0:8080/',
+    'http://[::ffff:127.0.0.1]/', // IPv4-mapped literal
+    'http://[64:ff9b::7f00:1]/', // NAT64 literal of loopback
+    'http://[2002:a9fe:a9fe::]/', // 6to4 literal of the metadata address
   ])('blocks %s', (url) => {
     expect(() => check(url)).toThrow(BlockedTargetError);
   });

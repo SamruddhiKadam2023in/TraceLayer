@@ -42,12 +42,16 @@ RUN pnpm --filter @tracelayer/shared build \
 
 FROM server-build AS backend
 ENV NODE_ENV=production
+# Run as the unprivileged node user; the app files stay root-owned and read-only to it.
+USER node
 EXPOSE 4000
-# Apply pending migrations, then start the API. Only the backend runs migrations.
-CMD ["sh", "-c", "pnpm --filter @tracelayer/db exec prisma migrate deploy && exec node apps/backend/dist/server.js"]
+# Apply pending migrations, then start the API. Only the backend runs migrations. Prisma is
+# called directly: pnpm (via corepack) lives in root's home, which the node user cannot read.
+CMD ["sh", "-c", "cd packages/db && ./node_modules/.bin/prisma migrate deploy && cd /app && exec node apps/backend/dist/server.js"]
 
 FROM server-build AS worker
 ENV NODE_ENV=production
+USER node
 CMD ["node", "apps/worker/dist/index.js"]
 
 # ── Frontend: static build served by nginx
@@ -59,5 +63,6 @@ RUN pnpm --filter @tracelayer/frontend build
 
 FROM nginx:1.27-alpine AS frontend
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=frontend-build /app/apps/frontend/dist /usr/share/nginx/html
 EXPOSE 80

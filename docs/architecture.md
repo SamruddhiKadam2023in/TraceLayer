@@ -119,7 +119,7 @@ router → 404 handler → error handler.
   unexpected is logged in full server-side and returned to the client as a generic
   `INTERNAL_ERROR` with no stack trace.
 - **Proxy awareness.** `trust proxy` is set to one hop, matching nginx locally and the platform
-  load balancer in production, so client IPs are correct for rate limiting (Phase 14).
+  load balancer in production, so client IPs are correct for rate limiting.
 
 #### Response format
 
@@ -923,6 +923,45 @@ without touching nodes being edited.
 - Viewers see the map and node details read-only.
 - React Flow (about 180 KB) loads only on this page.
 
+## Security hardening
+
+This section covers how the Phase 14 checklist (spec §40–42) is met, and which test proves each
+item. Security that is part of a feature lives in that feature's section: authentication,
+authorization, encrypted secrets and SSRF protection.
+
+| Area                        | What is in place                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Tests                                                               |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **SSRF**                    | See _Request execution and SSRF protection_. Hardened in this phase: every IPv6 address is expanded before checking, so IPv4-mapped, NAT64, IPv4-compatible and 6to4 addresses are judged by the IPv4 they carry, in any spelling (`64:ff9b:0:0:0:0:7f00:1` is 127.0.0.1). Teredo, local-use NAT64 and IPv4-translated ranges are refused outright. Disguised IPv4 literals in URLs (`0177.0.0.1`, `127.1`, `2130706433`, `0x7f.1`) normalise to their real address and are blocked | `packages/executor/src/ssrf.test.ts`                                |
+| **Rate limiting**           | Per-endpoint limits (see the API reference), plus a per-IP backstop of 600 requests per minute on the whole API. Health checks are exempt. Limits live in Redis, so they hold across API instances                                                                                                                                                                                                                                                                                  | `security.test.ts`, per-feature suites                              |
+| **Helmet**                  | CSP `default-src 'self'`, `frame-ancestors 'self'`, HSTS, `nosniff`, `Referrer-Policy: no-referrer`. `x-powered-by` is off                                                                                                                                                                                                                                                                                                                                                          | `security.test.ts`                                                  |
+| **Web app headers**         | nginx sends a strict Content-Security-Policy on the SPA (details below), plus `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` and COOP. The early theme script moved out of `index.html` into `/theme-init.js`, so no inline script is needed                                                                                                                                                                                                           | live check after each rebuild                                       |
+| **CORS**                    | An allowlist containing only `FRONTEND_URL`. A matching `Origin` is echoed back with credentials; any other origin gets no CORS headers, preflights included. Socket.IO uses the same origin                                                                                                                                                                                                                                                                                        | `security.test.ts`                                                  |
+| **Request size**            | JSON bodies are capped at 1 MB (413 `PAYLOAD_TOO_LARGE`). nginx caps bodies at 2 MB. Socket.IO messages are capped at 10 KB. Executed requests' response bodies are capped at 1 MB                                                                                                                                                                                                                                                                                                  | `security.test.ts`, `app.test.ts`                                   |
+| **Timeouts**                | Every API request gets an answer within 45 s: 504 `TIMEOUT`, and a late handler result is dropped safely. That is above the 30 s maximum for executed requests. Node rejects clients that take more than 20 s to send headers or 50 s for the whole request. nginx closes slow clients after 15 s. Executed requests and monitor checks have their own timeouts                                                                                                                     | `security.test.ts`                                                  |
+| **Secure secrets**          | In production, the API and the worker refuse to start with the public development secrets from `.env.example`, any `change-me…` value, or a reused JWT secret. The local Docker stack (which runs with `NODE_ENV=production`) opts out explicitly with `ALLOW_DEV_SECRETS=true` and logs a warning. The API also warns at startup when `ALLOW_PRIVATE_NETWORK_TARGETS` is on in production                                                                                          | `security.test.ts` (starts a real process with production settings) |
+| **Sensitive-log filtering** | Request logs contain only method, URL, status and request id. On top of that, every log line from the API and the worker passes through `redactSensitive` (`packages/shared/src/security.ts`): values under keys that look like credentials are replaced at any depth, and `Bearer`/`Basic` credentials and `token=`, `password=` and similar query values are masked inside strings. Errors are flattened so their attached request config is redacted too                         | `security.test.ts`                                                  |
+| **Containers**              | The API and worker images run as the unprivileged `node` user. The application files stay root-owned, so a compromised process cannot modify the code                                                                                                                                                                                                                                                                                                                               | live check after each rebuild                                       |
+
+**Content-Security-Policy of the web app** (`docker/security-headers.conf`):
+
+```text
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
+font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self';
+form-action 'self'; frame-ancestors 'none'
+```
+
+- Scripts come only from this origin: no inline scripts, no `eval`, no third-party code.
+- Inline style attributes are allowed because charts and the dependency map position elements
+  with `style="…"`. Style attributes cannot run code.
+- `connect-src 'self'` covers the REST API and the Socket.IO WebSocket, which are on the same
+  origin.
+
+**Not in this phase:**
+
+- HSTS on the web app: it needs HTTPS, which the local stack does not have. It is added with
+  deployment in Phase 20.
+- Slimming the server images to production-only dependencies.
+
 ## Configuration
 
 All configuration comes from environment variables; see [`.env.example`](../.env.example) for
@@ -947,5 +986,5 @@ PostgreSQL on 5432/5433.
 
 The `Dockerfile` is one multi-stage build: a shared dependency stage installs the whole workspace
 once (with a pnpm store cache mount), then separate stages compile the server apps and the
-frontend. The server images currently run as root; switching them to the unprivileged `node`
-user and slimming them to production-only dependencies is part of Phase 14 (security hardening).
+frontend. The API and worker images run as the unprivileged `node` user (see _Security
+hardening_).

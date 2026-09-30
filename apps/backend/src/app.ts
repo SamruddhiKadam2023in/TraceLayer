@@ -8,10 +8,19 @@ import { env } from './config/env';
 import { logger } from './utils/logger';
 import { createApiRouter } from './routes';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
+import { createGlobalRateLimiter } from './middleware/rate-limit';
+import { responseTimeout, RESPONSE_TIMEOUT_MS } from './middleware/timeout';
 
 export const JSON_BODY_LIMIT = '1mb';
+export const GLOBAL_RATE_LIMIT_PER_MINUTE = 600;
 
-export function createApp(): Express {
+export interface AppOptions {
+  /** Requests per minute per client IP across the whole API. */
+  globalRateLimit?: number;
+  responseTimeoutMs?: number;
+}
+
+export function createApp(options: AppOptions = {}): Express {
   const app = express();
 
   app.disable('x-powered-by');
@@ -21,7 +30,8 @@ export function createApp(): Express {
   app.use(helmet());
   app.use(
     cors({
-      origin: env.FRONTEND_URL,
+      // An allowlist: only a matching Origin is echoed back; any other gets no CORS headers.
+      origin: [env.FRONTEND_URL],
       credentials: true,
     }),
   );
@@ -47,10 +57,15 @@ export function createApp(): Express {
       },
     }),
   );
+  app.use(responseTimeout(options.responseTimeoutMs ?? RESPONSE_TIMEOUT_MS));
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
   app.use(cookieParser());
 
-  app.use('/api', createApiRouter());
+  app.use(
+    '/api',
+    createGlobalRateLimiter(options.globalRateLimit ?? GLOBAL_RATE_LIMIT_PER_MINUTE),
+    createApiRouter(),
+  );
 
   app.use(notFoundHandler);
   app.use(errorHandler);

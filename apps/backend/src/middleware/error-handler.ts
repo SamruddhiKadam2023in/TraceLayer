@@ -33,6 +33,11 @@ function toAppError(err: unknown): AppError | null {
 }
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
+  // A response already went out (e.g. a handler failed after a timeout answered): just record it.
+  if (res.headersSent) {
+    logger.warn({ err, method: req.method, path: req.path }, 'Error after the response was sent');
+    return;
+  }
   const appError = toAppError(err);
   const requestId = typeof req.id === 'string' ? req.id : undefined;
 

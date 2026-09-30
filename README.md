@@ -4,7 +4,7 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 13 of 20 (API dependency map) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 14 of 20 (Security hardening) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
 > and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
@@ -273,16 +273,23 @@ In place so far:
   workspace's member rows and re-checks the actor's current role, so a workspace can never be
   left without an owner, even under concurrent requests.
 
-- Security headers via `helmet`; `x-powered-by` disabled.
-- CORS limited to the configured frontend origin.
-- JSON request bodies capped at 1 MB.
-- Configuration validated at startup; the server refuses to start with missing or weak secrets.
-- Request logs are allowlisted: headers, cookies and tokens are never written to logs.
-- Unexpected errors return a generic message; stack traces stay server-side.
+- **Headers:** Helmet on the API (CSP, HSTS, `nosniff`, no `x-powered-by`), and a strict
+  Content-Security-Policy on the web app (no inline or third-party scripts, never framed).
+- **CORS** is an allowlist of the configured frontend origin only.
+- **Limits:** a per-IP backstop of 600 API requests per minute on top of the per-endpoint limits.
+  JSON bodies are capped at 1 MB. Every request is answered within 45 s. Slow clients are cut off
+  by Node and nginx.
+- **Secrets:** configuration is validated at startup. In production the API and worker refuse to
+  start with the public development secrets or a reused JWT secret.
+- **Logs:** request logs are allowlisted, and every log line is deep-redacted: credentials,
+  cookies, tokens and keys are masked at any depth and inside error messages.
+- **Errors:** unexpected errors return a generic message; stack traces stay server-side.
+- **Containers:** the API and worker run as an unprivileged user.
 - No real secrets in the repository: `.env` is git-ignored and `.env.example` holds
   development-only placeholders.
 
-Planned: further hardening (Phase 14).
+Details and the tests behind each item:
+[architecture → Security hardening](docs/architecture.md#security-hardening).
 
 ## Roadmap
 

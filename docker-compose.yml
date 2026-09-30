@@ -21,6 +21,9 @@ x-server-env: &server-env
   QUEUE_PREFIX: ${QUEUE_PREFIX:-tracelayer}
   # SSRF protection: executed requests may not reach private or internal addresses.
   ALLOW_PRIVATE_NETWORK_TARGETS: ${ALLOW_PRIVATE_NETWORK_TARGETS:-false}
+  # The stack runs with NODE_ENV=production, which refuses the public development secrets above
+  # unless this is true. Fine on your own machine; set real secrets and false anywhere else.
+  ALLOW_DEV_SECRETS: ${ALLOW_DEV_SECRETS:-true}
 
 services:
   postgres:

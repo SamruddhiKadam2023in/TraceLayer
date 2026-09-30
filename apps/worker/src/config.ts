@@ -1,6 +1,7 @@
 import path from 'node:path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { findInsecureSecrets } from '@tracelayer/shared';
 
 dotenv.config({
   path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../../.env')],
@@ -22,7 +23,6 @@ const envSchema = z.object({
     ),
   /** Redis key prefix for BullMQ; must match the API's. */
   QUEUE_PREFIX: z.string().min(1).default('tracelayer'),
-  /** SSRF protection off: local development only, never in production. */
   // ── Email notifications. An empty SMTP_HOST renders emails to the log instead of sending.
   SMTP_HOST: z
     .string()
@@ -34,7 +34,13 @@ const envSchema = z.object({
   SMTP_FROM: z.string().min(1).default('TraceLayer <alerts@tracelayer.local>'),
   /** Public URL of the web app, for links in notifications. */
   APP_URL: z.url().default('http://localhost:8080'),
+  /** SSRF protection off: local development only, never in production. */
   ALLOW_PRIVATE_NETWORK_TARGETS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /** Accept the public development ENCRYPTION_KEY in production (local Docker stack only). */
+  ALLOW_DEV_SECRETS: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
@@ -46,6 +52,15 @@ const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {
   const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`);
   console.error(`Invalid worker configuration:\n${issues.join('\n')}`);
+  process.exit(1);
+}
+
+const insecure = findInsecureSecrets({ ENCRYPTION_KEY: parsed.data.ENCRYPTION_KEY });
+if (insecure.length && parsed.data.NODE_ENV === 'production' && !parsed.data.ALLOW_DEV_SECRETS) {
+  console.error(
+    `Refusing to start in production with insecure secrets: ${insecure.join(', ')}. ` +
+      'Generate new values (see .env.example), or set ALLOW_DEV_SECRETS=true for a local stack.',
+  );
   process.exit(1);
 }
 

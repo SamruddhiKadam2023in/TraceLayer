@@ -11,3 +11,4 @@ export * from './alert';
 export * from './incident';
 export * from './realtime';
 export * from './dependency';
+export * from './security';

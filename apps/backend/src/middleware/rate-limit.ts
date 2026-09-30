@@ -88,6 +88,29 @@ function createLimiter(config: LimiterConfig) {
   });
 }
 
+/**
+ * Backstop for every API route, per client IP: whatever an endpoint allows, one address cannot
+ * flood the API. Health checks are exempt so monitoring keeps working under load.
+ */
+export function createGlobalRateLimiter(limitPerMinute: number) {
+  return rateLimit({
+    windowMs: MINUTE_MS,
+    limit: limitPerMinute,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skip: (req) => req.path.startsWith('/health'),
+    store: env.NODE_ENV === 'test' ? undefined : new RedisRateLimitStore('global'),
+    passOnStoreError: true,
+    handler: (_req, _res, next) =>
+      next(
+        new AppError(
+          'RATE_LIMITED',
+          'Too many requests from this address. Slow down and try again.',
+        ),
+      ),
+  });
+}
+
 /** Limits on actions that create data, counted per signed-in user. */
 export function createWorkspaceRateLimiters() {
   return {

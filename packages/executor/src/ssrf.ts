@@ -52,9 +52,11 @@ for (const [network, prefix] of [
 }
 // IPv6
 for (const [network, prefix] of [
-  ['::', 128], // unspecified
-  ['::1', 128], // loopback
+  ['::', 96], // unspecified, loopback and deprecated IPv4-compatible (::a.b.c.d)
+  ['::ffff:0:0:0', 96], // IPv4-translated (SIIT), deprecated
+  ['64:ff9b:1::', 48], // local-use NAT64, translates to internal networks
   ['100::', 64], // discard
+  ['2001::', 32], // Teredo tunnels (the client IPv4 is obfuscated; refuse outright)
   ['2001:db8::', 32], // documentation
   ['fc00::', 7], // unique local, incl. AWS IMDS fd00:ec2::254
   ['fe80::', 10], // link-local
@@ -63,17 +65,38 @@ for (const [network, prefix] of [
   blocked.addSubnet(network, prefix, 'ipv6');
 }
 
-/** IPv4 embedded in IPv4-mapped (::ffff:a.b.c.d) and NAT64 (64:ff9b::a.b.c.d) addresses. */
-function embeddedIpv4(address: string): string | null {
-  const lower = address.toLowerCase();
-  const dotted = /^(?:::ffff:|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-  if (dotted?.[1]) return dotted[1];
-  const hex = /^(?:::ffff:|64:ff9b::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
-  if (hex?.[1] && hex[2]) {
-    const high = parseInt(hex[1], 16);
-    const low = parseInt(hex[2], 16);
-    return [high >> 8, high & 255, low >> 8, low & 255].join('.');
+/** The eight 16-bit groups of an IPv6 address, whatever its notation (::, dotted tail). */
+function ipv6Groups(address: string): number[] | null {
+  let text = address.toLowerCase();
+  const dotted = /^(.*:)(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(2).map(Number) as [number, number, number, number];
+    text = `${dotted[1]}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
   }
+  const [head = '', tail] = text.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const fill = tail === undefined ? 0 : 8 - left.length - right.length;
+  const groups = [...left, ...Array<string>(fill).fill('0'), ...right].map((g) => parseInt(g, 16));
+  return groups.length === 8 && groups.every((g) => g >= 0 && g <= 0xffff) ? groups : null;
+}
+
+const ipv4From = (high: number, low: number) =>
+  [high >> 8, high & 255, low >> 8, low & 255].join('.');
+
+/**
+ * The IPv4 address an IPv6 address carries, in any notation: IPv4-mapped (::ffff:a.b.c.d),
+ * NAT64 (64:ff9b::/96) and 6to4 (2002:AABB:CCDD::/48). Traffic to these reaches that IPv4
+ * address, so it is judged by the IPv4 rules. Checking the expanded form stops spellings such
+ * as 64:ff9b:0:0:0:0:7f00:1 from slipping past.
+ */
+function embeddedIpv4(address: string): string | null {
+  const g = ipv6Groups(address);
+  if (!g) return null;
+  const zeros = (from: number, to: number) => g.slice(from, to).every((x) => x === 0);
+  if (zeros(0, 5) && g[5] === 0xffff) return ipv4From(g[6]!, g[7]!);
+  if (g[0] === 0x64 && g[1] === 0xff9b && zeros(2, 6)) return ipv4From(g[6]!, g[7]!);
+  if (g[0] === 0x2002) return ipv4From(g[1]!, g[2]!);
   return null;
 }
 
