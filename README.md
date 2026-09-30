@@ -4,29 +4,6 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-![TraceLayer dashboard](docs/images/dashboard.png)
-
-## Contents
-
-- [Project overview](#project-overview)
-- [Problem statement](#problem-statement)
-- [Product features](#product-features)
-- [Architecture](#architecture)
-- [Technology stack](#technology-stack)
-- [Project structure](#project-structure)
-- [System design](#system-design)
-- [Database schema](#database-schema)
-- [API documentation](#api-documentation)
-- [Security architecture](#security-architecture)
-- [Monitoring architecture](#monitoring-architecture)
-- [Docker setup](#docker-setup)
-- [Local development](#local-development)
-- [Testing](#testing)
-- [Deployment](#deployment)
-- [Screenshots](#screenshots)
-- [Future improvements](#future-improvements)
-- [Documentation](#documentation)
-
 ## Project overview
 
 TraceLayer schedules recurring checks against your APIs, records every result, and turns what
