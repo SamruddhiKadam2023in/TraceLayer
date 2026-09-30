@@ -74,6 +74,7 @@ carry the standard `RateLimit` and `RateLimit-Policy` headers; a 429 also sets `
 | `POST /monitors/:id/run`               | 30 per minute, per user           |
 | `GET /metrics…`                        | 120 per minute, per user          |
 | `POST /notification-channels/:id/test` | 10 per 15 min, per user           |
+| `POST /incidents/:id/events`           | 60 per 15 min, per user           |
 
 ## Health
 
@@ -806,3 +807,111 @@ list channels. Creating, editing, deleting and testing need the owner or admin r
 
 `status` is `PENDING` while delivery is being retried, then `SENT` or `FAILED`. If the job queue
 is unreachable, the test endpoint returns `502 UPSTREAM_ERROR` and records the attempt as failed.
+
+## Incidents
+
+Incidents are opened automatically when alert rules fire, and resolve automatically when the
+monitor recovers (spec §26–27). Everyone in the workspace can read them. Changing and
+commenting need the owner, admin or member role.
+
+| Method | Path                        | Description                                 |
+| ------ | --------------------------- | ------------------------------------------- |
+| GET    | `/api/incidents`            | List, newest first, with filters and paging |
+| GET    | `/api/incidents/:id`        | One incident with its alerts and timeline   |
+| PATCH  | `/api/incidents/:id`        | Change status, severity or assignee         |
+| POST   | `/api/incidents/:id/events` | Add a comment to the timeline (`201`)       |
+
+### `GET /api/incidents`
+
+| Query parameter              | Meaning                                                                 |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| `projectId` or `workspaceId` | Exactly one: a project, or every project in a workspace (the dashboard) |
+| `status`                     | `ACTIVE` (every status except resolved), or one of the statuses below   |
+| `severity`                   | `LOW`, `MEDIUM`, `HIGH` or `CRITICAL`                                   |
+| `assigneeId`                 | Only incidents assigned to this user                                    |
+| `monitorId`                  | Only this monitor's incidents; a monitor outside the scope → `404`      |
+| `page`, `pageSize`           | Paging; `pageSize` 1–100, default 20                                    |
+
+```json
+{
+  "items": [
+    {
+      "id": "…",
+      "projectId": "…",
+      "number": 12,
+      "title": "Orders health: Error rate 8.7% > 5% over 5 min",
+      "severity": "HIGH",
+      "status": "INVESTIGATING",
+      "project": { "id": "…", "name": "Orders API" },
+      "monitor": { "id": "…", "name": "Orders health" },
+      "assignee": { "id": "…", "name": "Grace Hopper" },
+      "firingAlerts": 1,
+      "detectedAt": "2026-09-30T10:42:00.000Z",
+      "acknowledgedAt": "2026-09-30T10:46:00.000Z",
+      "resolvedAt": null,
+      "resolvedBy": null
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "pageSize": 20
+}
+```
+
+Statuses: `OPEN`, `ACKNOWLEDGED`, `INVESTIGATING`, `IDENTIFIED`, `RESOLVED`. `monitor` is `null`
+if the monitor was deleted. A resolved incident with `resolvedBy: null` resolved automatically
+because the monitor recovered.
+
+### `GET /api/incidents/:id`
+
+The summary above, plus `alerts` (each alert of the incident: `id`, `rule`, `severity`,
+`status`, `message`, `firedAt`, `resolvedAt`) and `events`, the timeline in order:
+
+```json
+{
+  "id": "…",
+  "type": "STATUS_CHANGED",
+  "actor": { "id": "…", "name": "Grace Hopper" },
+  "message": null,
+  "fromValue": "ACKNOWLEDGED",
+  "toValue": "INVESTIGATING",
+  "createdAt": "2026-09-30T10:51:00.000Z"
+}
+```
+
+| `type`             | Meaning                                                                       |
+| ------------------ | ----------------------------------------------------------------------------- |
+| `DETECTED`         | The incident was opened                                                       |
+| `ALERT_FIRED`      | An alert fired and opened or joined the incident (`message`: rule and breach) |
+| `ALERT_RESOLVED`   | An alert resolved (`message`: why)                                            |
+| `STATUS_CHANGED`   | `fromValue` → `toValue`; `actor: null` when resolved automatically            |
+| `SEVERITY_CHANGED` | `fromValue` → `toValue`; `actor: null` when a more severe alert raised it     |
+| `ASSIGNED`         | `fromValue`/`toValue` hold the previous and new assignee's name (or null)     |
+| `COMMENT`          | `message` holds the comment                                                   |
+
+`actor` is `null` for events TraceLayer recorded itself.
+
+### `PATCH /api/incidents/:id`
+
+```json
+{ "status": "RESOLVED", "severity": "CRITICAL", "assigneeId": "…" }
+```
+
+All fields are optional, but at least one is required. `assigneeId: null` unassigns.
+
+- Any status can follow any other. Setting `RESOLVED` records who resolved it. Leaving
+  `RESOLVED` reopens the incident. The first move away from `OPEN` sets `acknowledgedAt`.
+- The assignee must be a workspace member who can work on incidents. A non-member returns
+  `404`, and a viewer returns `400`, both with `details` on `assigneeId`.
+- Each real change adds a timeline event with the person who made it. Values that didn't
+  change are ignored.
+- Returns the full incident.
+
+### `POST /api/incidents/:id/events`
+
+```json
+{ "message": "Rolled back the deploy." }
+```
+
+`message` is 1–2000 characters, trimmed. Returns the new `COMMENT` event. Rate limit: 60 per 15
+minutes, per user.

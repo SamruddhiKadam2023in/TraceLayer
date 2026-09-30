@@ -17,6 +17,8 @@ import { ProjectHistoryPage } from '@/pages/project/ProjectHistoryPage';
 import { ProjectMonitorsPage } from '@/pages/project/ProjectMonitorsPage';
 import { ProjectAnalyticsPage } from '@/pages/project/ProjectAnalyticsPage';
 import { ProjectAlertsPage } from '@/pages/project/ProjectAlertsPage';
+import { ProjectIncidentsPage } from '@/pages/project/ProjectIncidentsPage';
+import { IncidentDetailPage } from '@/pages/project/IncidentDetailPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { MonitorCreatePage, MonitorDetailPage } from '@/pages/project/MonitorPages';
 import { EndpointCreatePage, EndpointDetailPage } from '@/pages/project/EndpointEditorPages';
@@ -61,6 +63,8 @@ export const routes: RouteObject[] = [
                       { path: 'monitors/new', element: <MonitorCreatePage /> },
                       { path: 'monitors/:monitorId', element: <MonitorDetailPage /> },
                       { path: 'analytics', element: <ProjectAnalyticsPage /> },
+                      { path: 'incidents', element: <ProjectIncidentsPage /> },
+                      { path: 'incidents/:incidentId', element: <IncidentDetailPage /> },
                       { path: 'alerts', element: <ProjectAlertsPage /> },
                       { path: 'history', element: <ProjectHistoryPage /> },
                       { path: 'environments', element: <ProjectEnvironmentsPage /> },

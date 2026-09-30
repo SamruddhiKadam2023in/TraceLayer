@@ -1,7 +1,7 @@
 import { Prisma } from '@tracelayer/db';
 
 /** Tables whose rows act as locks for their children. Fixed list, so the name is never user input. */
-type LockableTable = 'workspaces' | 'projects' | 'environments';
+type LockableTable = 'workspaces' | 'projects' | 'environments' | 'alert_rules';
 
 /**
  * Locks one parent row for the rest of the transaction (SELECT … FOR UPDATE).

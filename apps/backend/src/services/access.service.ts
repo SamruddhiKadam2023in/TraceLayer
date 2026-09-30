@@ -115,6 +115,29 @@ export async function authorizeMonitor(
   }
 }
 
+export interface IncidentAccess extends ProjectAccess {
+  incidentId: string;
+}
+
+/** Checks `permission` in the workspace that owns the incident's project. */
+export async function authorizeIncident(
+  userId: string,
+  incidentId: string,
+  permission: Permission,
+): Promise<IncidentAccess> {
+  const incident = await prisma.incident.findUnique({
+    where: { id: incidentId },
+    select: { projectId: true },
+  });
+  if (!incident) throw AppError.notFound('Incident');
+  try {
+    return { ...(await authorizeProject(userId, incident.projectId, permission)), incidentId };
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'NOT_FOUND') throw AppError.notFound('Incident');
+    throw err;
+  }
+}
+
 export interface AlertRuleAccess extends ProjectAccess {
   ruleId: string;
 }

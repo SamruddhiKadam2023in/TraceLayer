@@ -726,6 +726,68 @@ of its own workspace. Limits: 20 rules per monitor, 20 channels per workspace, 2
 - Each project has an **Alerts** tab listing fired alerts, open ones first.
 - Workspace settings has a **Notifications** section for email channels.
 
+## Incidents
+
+An **incident** groups the alerts of one monitor into one problem that people work on (spec
+§26–27). Incidents are numbered per project (#1, #2, …) from a counter on the project row.
+
+**Lifecycle.** The code lives in `packages/db/src/incidents.ts`, shared by the worker and the
+API:
+
+- **Opened by an alert.** When a rule fires, the worker (in the same transaction as the alert)
+  either joins the monitor's active incident or opens a new one.
+  - The new incident takes the alert's severity and a title such as
+    "Orders health: Error rate 8.7% > 5% over 5 min".
+  - A more severe alert joining later raises the incident's severity.
+- **Worked on by people.** Status moves between `OPEN`, `ACKNOWLEDGED`, `INVESTIGATING`,
+  `IDENTIFIED` and `RESOLVED` in any order. Setting `RESOLVED` resolves the incident manually,
+  and leaving `RESOLVED` reopens it. The first move away from `OPEN` records the
+  acknowledgement time. Incidents can be assigned to workspace members who can work on them
+  (owners, admins and members, not viewers).
+- **Resolved automatically.** When the monitor recovers and the incident's last firing alert
+  resolves, the incident resolves with no `resolvedBy`, and the timeline says it resolved
+  automatically.
+- **Rule changes don't resolve.** When a person changes, disables or deletes a rule, its open
+  alert closes, but the incident stays open. The rule change doesn't show that the problem went
+  away, so a person resolves the incident. The timeline notes why the alert closed.
+- **Manual resolution sticks.** An incident a person resolved stays resolved. A later recovery
+  is only noted on its timeline. A new failure after that opens a new incident.
+
+**Timeline.** Every step is an `IncidentEvent`:
+
+| Event                                       | Written by             |
+| ------------------------------------------- | ---------------------- |
+| `DETECTED`, `ALERT_FIRED`, `ALERT_RESOLVED` | TraceLayer             |
+| `STATUS_CHANGED`, `SEVERITY_CHANGED`        | TraceLayer or a person |
+| `ASSIGNED`                                  | a person               |
+| `COMMENT`                                   | a person               |
+
+The actor is null for events TraceLayer records. Events written in one step share a timestamp
+and are ordered by type, so the timeline always reads in the order things happened.
+
+**Concurrency.** Every change locks the incident row (`SELECT … FOR UPDATE`), always after any
+alert-rule locks, so the lock order is the same everywhere:
+
+- The worker takes the monitor's rule locks, which serialize two checks of one monitor, so
+  they cannot open two incidents. A test forces this race and fails without the lock.
+- The incident lock serializes a person's changes with the worker's automatic resolution. A
+  person resolving at the same moment the monitor recovers gives one resolution, not two. A
+  test holds the lock to force this ordering and fails without it.
+- A database `CHECK` constraint keeps `status = RESOLVED` and `resolved_at` consistent.
+
+**History.** Deleting a monitor keeps its incidents (with `monitorId` set to null). Deleting a
+user keeps their timeline entries without the name.
+
+**Frontend.**
+
+- Each project has an **Incidents** tab with filters stored in the URL (active, a specific
+  status or all; severity; "Assigned to me") and paging.
+- The **incident page** shows status, severity, monitor, assignee, acknowledgement and
+  resolution, the linked alerts and the timeline. People who can work on incidents get
+  Acknowledge, Resolve/Reopen, status, severity and assignee controls, and a comment box.
+- The **dashboard** lists the workspace's five newest active incidents.
+- The **Alerts** tab links each alert to its incident.
+
 ## Configuration
 
 All configuration comes from environment variables; see [`.env.example`](../.env.example) for

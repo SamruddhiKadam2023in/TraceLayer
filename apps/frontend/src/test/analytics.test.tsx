@@ -55,6 +55,7 @@ function api(extra: Record<string, Handler | FakeResponse> = {}) {
     'GET /workspaces': [200, ok([makeWorkspace({ name: 'Acme' })])],
     'GET /projects/proj-1': [200, ok(PROJECT)],
     'GET /projects/proj-1/environments': [200, ok([])],
+    'GET /incidents': [200, ok({ items: [], total: 0, page: 1, pageSize: 5 })],
     ...metricsHandlers({ monitors: MONITORS }),
     ...extra,
   });

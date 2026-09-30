@@ -1,4 +1,4 @@
-import type { Prisma } from '@tracelayer/db';
+import { onAlertResolved, type Prisma } from '@tracelayer/db';
 import {
   alertRuleSchema,
   describeRule,
@@ -66,12 +66,35 @@ async function assertChannelsInWorkspace(workspaceId: string, channelIds: string
   }
 }
 
-/** Resolves the rule's open alert, e.g. when the rule is changed, disabled or deleted. */
-async function resolveOpenAlert(tx: Prisma.TransactionClient, ruleId: string): Promise<void> {
-  await tx.alert.updateMany({
+/**
+ * Resolves the rule's open alert, e.g. when the rule is changed, disabled or deleted, and notes
+ * it on the incident's timeline. The incident itself stays open: a changed rule says nothing
+ * about whether the problem went away. The rule row is locked first, the same order the worker
+ * uses, so an evaluation in progress finishes before the alert is closed.
+ */
+async function resolveOpenAlert(
+  tx: Prisma.TransactionClient,
+  ruleId: string,
+  reason: string,
+): Promise<void> {
+  await lockRow(tx, 'alert_rules', ruleId);
+  const open = await tx.alert.findMany({
     where: { ruleId, status: 'FIRING' },
-    data: { status: 'RESOLVED', resolvedAt: new Date() },
+    select: { id: true, rule: { select: { name: true } } },
   });
+  const now = new Date();
+  for (const alert of open) {
+    await tx.alert.update({
+      where: { id: alert.id },
+      data: { status: 'RESOLVED', resolvedAt: now },
+    });
+    await onAlertResolved(tx, {
+      alertId: alert.id,
+      now,
+      autoResolve: false,
+      reason: `${alert.rule?.name ?? 'Alert rule'}: ${reason}`,
+    });
+  }
 }
 
 export async function listRules(
@@ -153,7 +176,15 @@ export async function updateRule(
     (current.enabled && !config.enabled);
 
   const row = await prisma.$transaction(async (tx) => {
-    if (conditionChanged) await resolveOpenAlert(tx, access.ruleId);
+    if (conditionChanged) {
+      await resolveOpenAlert(
+        tx,
+        access.ruleId,
+        config.enabled
+          ? 'closed because the rule was changed'
+          : 'closed because the rule was disabled',
+      );
+    }
     if (changes.channelIds) {
       await tx.alertRuleChannel.deleteMany({ where: { ruleId: access.ruleId } });
       await tx.alertRuleChannel.createMany({
@@ -180,7 +211,7 @@ export async function updateRule(
 /** Deletes the rule; its alert history stays (with the rule reference cleared). */
 export async function deleteRule(access: AlertRuleAccess): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    await resolveOpenAlert(tx, access.ruleId);
+    await resolveOpenAlert(tx, access.ruleId, 'closed because the rule was deleted');
     await tx.alertRule.delete({ where: { id: access.ruleId } });
   });
 }
@@ -194,6 +225,7 @@ export async function listFiredAlerts(
     include: {
       rule: { select: { id: true, name: true } },
       monitor: { select: { id: true, name: true } },
+      incident: { select: { id: true, number: true } },
     },
     // Firing first, then newest.
     orderBy: [{ status: 'asc' }, { firedAt: 'desc' }],
@@ -203,6 +235,7 @@ export async function listFiredAlerts(
     id: a.id,
     rule: a.rule,
     monitor: a.monitor,
+    incident: a.incident,
     severity: a.severity,
     status: a.status,
     value: a.value,

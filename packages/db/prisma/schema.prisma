@@ -22,12 +22,15 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  refreshTokens   RefreshToken[]
-  memberships      WorkspaceMember[]
-  createdProjects  Project[]
-  createdEndpoints Endpoint[]
-  requestHistory   RequestHistory[]
-  createdMonitors  Monitor[]
+  refreshTokens     RefreshToken[]
+  memberships       WorkspaceMember[]
+  createdProjects   Project[]
+  createdEndpoints  Endpoint[]
+  requestHistory    RequestHistory[]
+  createdMonitors   Monitor[]
+  assignedIncidents Incident[]        @relation("IncidentAssignee")
+  resolvedIncidents Incident[]        @relation("IncidentResolver")
+  incidentEvents    IncidentEvent[]
 
   @@map("users")
 }
@@ -101,18 +104,20 @@ model WorkspaceMember {
 // ─── Projects & environments (Phase 4) ───────────────────────────────────────
 
 model Project {
-  id          String   @id @default(uuid()) @db.Uuid
-  workspaceId String   @map("workspace_id") @db.Uuid
+  id              String   @id @default(uuid()) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
   /// Unique per workspace, compared case-insensitively by the service.
-  name        String   @db.VarChar(100)
-  description String?  @db.VarChar(500)
+  name            String   @db.VarChar(100)
+  description     String?  @db.VarChar(500)
+  /// Last incident number used; incidents are numbered #1, #2, … per project.
+  incidentCounter Int      @default(0) @map("incident_counter")
   /// Kept as null if the creator's account is deleted.
-  createdById String?  @map("created_by_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdById     String?  @map("created_by_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy    User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy    User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
   environments Environment[]
   endpoints    Endpoint[]
   requests     RequestHistory[]
@@ -120,6 +125,7 @@ model Project {
   monitorRuns  MonitorRun[]
   alertRules   AlertRule[]
   alerts       Alert[]
+  incidents    Incident[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -205,9 +211,9 @@ model Endpoint {
   createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
-  createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment Environment?     @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  createdBy   User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
   requests    RequestHistory[]
   monitors    Monitor[]
 
@@ -290,6 +296,7 @@ model Monitor {
   runs        MonitorRun[]
   alertRules  AlertRule[]
   alerts      Alert[]
+  incidents   Incident[]
 
   @@unique([projectId, name])
   @@index([projectId])
@@ -408,7 +415,10 @@ model Alert {
   message    String      @db.VarChar(500)
   firedAt    DateTime    @default(now()) @map("fired_at") @db.Timestamptz(3)
   resolvedAt DateTime?   @map("resolved_at") @db.Timestamptz(3)
+  /// The incident this alert opened or joined.
+  incidentId String?     @map("incident_id") @db.Uuid
 
+  incident      Incident?      @relation(fields: [incidentId], references: [id], onDelete: SetNull)
   rule          AlertRule?     @relation(fields: [ruleId], references: [id], onDelete: SetNull)
   monitor       Monitor        @relation(fields: [monitorId], references: [id], onDelete: Cascade)
   project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -416,6 +426,7 @@ model Alert {
 
   @@index([projectId, firedAt(sort: Desc)])
   @@index([ruleId, status])
+  @@index([incidentId])
   @@map("alerts")
 }
 
@@ -493,4 +504,82 @@ model Notification {
   @@index([channelId, createdAt(sort: Desc)])
   @@index([alertId])
   @@map("notifications")
+}
+
+// ─── Incidents (spec §26–27) ─────────────────────────────────────────────────
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  INVESTIGATING
+  IDENTIFIED
+  RESOLVED
+
+  @@map("incident_status")
+}
+
+enum IncidentEventType {
+  DETECTED
+  ALERT_FIRED
+  ALERT_RESOLVED
+  STATUS_CHANGED
+  SEVERITY_CHANGED
+  ASSIGNED
+  COMMENT
+
+  @@map("incident_event_type")
+}
+
+/// Opened by the worker when an alert fires; later alerts of the same monitor join it while it
+/// is open. Resolves automatically when its last firing alert resolves.
+model Incident {
+  id             String         @id @default(uuid()) @db.Uuid
+  projectId      String         @map("project_id") @db.Uuid
+  number         Int
+  /// Kept (as null) if the monitor is deleted, so the history survives.
+  monitorId      String?        @map("monitor_id") @db.Uuid
+  title          String         @db.VarChar(300)
+  severity       Severity
+  status         IncidentStatus @default(OPEN)
+  assigneeId     String?        @map("assignee_id") @db.Uuid
+  detectedAt     DateTime       @default(now()) @map("detected_at") @db.Timestamptz(3)
+  acknowledgedAt DateTime?      @map("acknowledged_at") @db.Timestamptz(3)
+  resolvedAt     DateTime?      @map("resolved_at") @db.Timestamptz(3)
+  /// null with resolvedAt set means it resolved automatically.
+  resolvedById   String?        @map("resolved_by_id") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  monitor    Monitor?        @relation(fields: [monitorId], references: [id], onDelete: SetNull)
+  assignee   User?           @relation("IncidentAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  resolvedBy User?           @relation("IncidentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  alerts     Alert[]
+  events     IncidentEvent[]
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+  @@index([projectId, detectedAt(sort: Desc)])
+  @@index([monitorId, status])
+  @@index([assigneeId])
+  @@map("incidents")
+}
+
+/// The incident timeline: system events and people's actions, in order.
+model IncidentEvent {
+  id         String            @id @default(uuid()) @db.Uuid
+  incidentId String            @map("incident_id") @db.Uuid
+  type       IncidentEventType
+  /// null for events recorded by TraceLayer itself.
+  actorId    String?           @map("actor_id") @db.Uuid
+  message    String?           @db.VarChar(2000)
+  fromValue  String?           @map("from_value") @db.VarChar(100)
+  toValue    String?           @map("to_value") @db.VarChar(100)
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  actor    User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([incidentId, createdAt])
+  @@map("incident_events")
 }

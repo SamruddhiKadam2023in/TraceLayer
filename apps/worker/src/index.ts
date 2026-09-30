@@ -81,7 +81,11 @@ async function main(): Promise<void> {
       case JOB_NAMES.CHECK: {
         const data = job.data as MonitorCheckJobData;
         const result = await processMonitorCheck(data.monitorId, deps, { manual: data.manual });
-        logger.debug({ monitorId: data.monitorId, ...result }, 'Monitor check finished');
+        const { check: _check, ...counts } = result;
+        logger.debug({ monitorId: data.monitorId, ...counts }, 'Monitor check finished');
+        if (result.incidentsOpened || result.incidentsResolved) {
+          logger.info({ monitorId: data.monitorId, ...counts }, 'Incident state changed');
+        }
         return result;
       }
       case JOB_NAMES.RECONCILE: {

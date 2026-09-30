@@ -15,6 +15,7 @@ const TABS = [
   { to: 'endpoints', label: 'Endpoints', end: false },
   { to: 'monitors', label: 'Monitors', end: false },
   { to: 'analytics', label: 'Analytics', end: false },
+  { to: 'incidents', label: 'Incidents', end: false },
   { to: 'alerts', label: 'Alerts', end: false },
   { to: 'history', label: 'History', end: false },
   { to: 'environments', label: 'Environments', end: false },

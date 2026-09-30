@@ -301,6 +301,8 @@ export interface FiredAlertView {
   id: string;
   rule: { id: string; name: string } | null;
   monitor: { id: string; name: string };
+  /** The incident this alert opened or joined. */
+  incident: { id: string; number: number } | null;
   severity: Severity;
   status: 'FIRING' | 'RESOLVED';
   value: number | null;

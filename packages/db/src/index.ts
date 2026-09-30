@@ -11,3 +11,5 @@ export function createPrismaClient(options: CreatePrismaClientOptions = {}): Pri
     log: options.logQueries ? ['query', 'warn', 'error'] : ['warn', 'error'],
   });
 }
+
+export * from './incidents';

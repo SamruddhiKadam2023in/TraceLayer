@@ -164,6 +164,18 @@ export function createAlertRateLimiters() {
   };
 }
 
+export function createIncidentRateLimiters() {
+  return {
+    comment: createLimiter({
+      name: 'incident-comment',
+      windowMs: 15 * MINUTE_MS,
+      limit: 60,
+      perUser: true,
+      message: 'Too many comments. Wait a few minutes and try again.',
+    }),
+  };
+}
+
 export function createMetricsRateLimiters() {
   return {
     // Generous for dashboards that load several series at once, but bounded.

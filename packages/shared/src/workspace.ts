@@ -18,6 +18,8 @@ export const PERMISSIONS = {
   'projects.manage': ['OWNER', 'ADMIN'],
   /** Create, edit and run endpoints and monitors (Phases 5–7). */
   'monitoring.manage': ['OWNER', 'ADMIN', 'MEMBER'],
+  /** Change incident status, severity and assignee, and comment on incidents. */
+  'incidents.manage': ['OWNER', 'ADMIN', 'MEMBER'],
 } as const satisfies Record<string, readonly WorkspaceRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

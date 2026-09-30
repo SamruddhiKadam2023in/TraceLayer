@@ -1,4 +1,9 @@
-import type { Prisma, PrismaClient } from '@tracelayer/db';
+import {
+  onAlertResolved,
+  openOrJoinIncident,
+  type Prisma,
+  type PrismaClient,
+} from '@tracelayer/db';
 import {
   checkCondition,
   describeBreach,
@@ -11,6 +16,8 @@ export interface RuleEvaluationResult {
   ruleId: string;
   transition: 'fired' | 'resolved' | null;
   alertId: string | null;
+  /** The incident the alert opened, joined or (on recovery) resolved. */
+  incident: { id: string; created: boolean; resolved: boolean } | null;
 }
 
 interface WindowRow {
@@ -49,7 +56,8 @@ async function windowStats(
 /**
  * Spec §19 step 13: evaluates every enabled rule of the monitor after a run, moves each rule
  * through OK → PENDING → FIRING, and opens or resolves alerts. The rules are locked for the
- * duration, so two runs finishing together cannot fire the same alert twice.
+ * duration, so two runs finishing together cannot fire the same alert twice. Fired alerts open
+ * or join the monitor's incident; recovered ones may resolve it (spec §26).
  */
 export async function evaluateMonitorRules(
   prisma: PrismaClient,
@@ -63,7 +71,7 @@ export async function evaluateMonitorRules(
 
     const monitor = await tx.monitor.findUniqueOrThrow({
       where: { id: monitorId },
-      select: { projectId: true, consecutiveFailures: true },
+      select: { projectId: true, name: true, consecutiveFailures: true },
     });
     const latest = await tx.monitorRun.findFirst({
       where: { monitorId },
@@ -108,6 +116,7 @@ export async function evaluateMonitorRules(
       });
 
       let alertId: string | null = null;
+      let incident: RuleEvaluationResult['incident'] = null;
       if (next.transition === 'fired') {
         const alert = await tx.alert.create({
           data: {
@@ -123,6 +132,17 @@ export async function evaluateMonitorRules(
           select: { id: true },
         });
         alertId = alert.id;
+        const joined = await openOrJoinIncident(tx, {
+          alertId: alert.id,
+          projectId: monitor.projectId,
+          monitorId,
+          monitorName: monitor.name,
+          ruleName: rule.name,
+          severity: rule.severity,
+          message: describeBreach(rule, value),
+          now,
+        });
+        incident = { id: joined.incidentId, created: joined.created, resolved: false };
       } else if (next.transition === 'resolved') {
         const open = await tx.alert.findFirst({
           where: { ruleId: rule.id, status: 'FIRING' },
@@ -135,9 +155,18 @@ export async function evaluateMonitorRules(
             data: { status: 'RESOLVED', resolvedAt: now },
           });
           alertId = open.id;
+          const outcome = await onAlertResolved(tx, {
+            alertId: open.id,
+            now,
+            autoResolve: true,
+            reason: `${rule.name}: the condition cleared`,
+          });
+          if (outcome) {
+            incident = { id: outcome.incidentId, created: false, resolved: outcome.autoResolved };
+          }
         }
       }
-      results.push({ ruleId: rule.id, transition: next.transition, alertId });
+      results.push({ ruleId: rule.id, transition: next.transition, alertId, incident });
     }
     return results;
   });

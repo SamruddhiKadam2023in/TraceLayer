@@ -75,6 +75,18 @@ export function ProjectAlertsPage() {
                     {alert.monitor.name}
                   </Link>
                   {alert.rule ? ` · ${alert.rule.name}` : ' · deleted rule'}
+                  {alert.incident && (
+                    <>
+                      {' · '}
+                      <Link
+                        to={`../incidents/${alert.incident.id}`}
+                        relative="path"
+                        className="hover:underline"
+                      >
+                        Incident #{alert.incident.number}
+                      </Link>
+                    </>
+                  )}
                 </p>
               </div>
               <p className="text-right text-xs text-fg-subtle" title={alert.firedAt}>

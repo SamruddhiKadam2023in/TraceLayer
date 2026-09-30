@@ -254,6 +254,7 @@ describe('project alerts', () => {
     id: 'a1',
     rule: { id: RULE_ID, name: 'Error spike' },
     monitor: { id: MONITOR_ID, name: 'Production health' },
+    incident: { id: 'inc-1', number: 7 },
     severity: 'HIGH',
     status: 'FIRING',
     value: 12.5,
@@ -266,6 +267,7 @@ describe('project alerts', () => {
     ...firing,
     id: 'a2',
     rule: null,
+    incident: null,
     status: 'RESOLVED',
     severity: 'LOW',
     message: 'Old breach',
@@ -284,6 +286,10 @@ describe('project alerts', () => {
     expect(within(first!).getByRole('link', { name: 'Production health' })).toHaveAttribute(
       'href',
       `/projects/proj-1/monitors/${MONITOR_ID}`,
+    );
+    expect(within(first!).getByRole('link', { name: 'Incident #7' })).toHaveAttribute(
+      'href',
+      '/projects/proj-1/incidents/inc-1',
     );
     expect(within(second!).getByText('Resolved')).toBeInTheDocument();
     expect(within(second!).getByText(/deleted rule/)).toBeInTheDocument();
