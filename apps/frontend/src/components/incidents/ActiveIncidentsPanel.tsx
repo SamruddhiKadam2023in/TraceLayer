@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { LoadError } from '@/components/EmptyState';
+import { useRealtimeRefresh } from '@/hooks/useRealtime';
 import { useQuery } from '@/hooks/useQuery';
 import { fetchIncidents } from '@/services/incident.service';
 import { IncidentList } from './IncidentList';
@@ -12,6 +13,10 @@ export function ActiveIncidentsPanel({ workspaceId }: { workspaceId: string }) {
   const [now] = useState(Date.now);
   const { data, error, reload } = useQuery(`active-incidents:${workspaceId}`, () =>
     fetchIncidents({ workspaceId, status: 'ACTIVE', pageSize: SHOWN }),
+  );
+  useRealtimeRefresh(
+    (m) => m.event === 'incident.created' || m.event === 'incident.updated',
+    reload,
   );
 
   return (

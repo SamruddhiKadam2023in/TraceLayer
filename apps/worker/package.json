@@ -12,6 +12,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@socket.io/redis-emitter": "^5",
     "@tracelayer/db": "workspace:^",
     "@tracelayer/executor": "workspace:^",
     "@tracelayer/shared": "workspace:^",

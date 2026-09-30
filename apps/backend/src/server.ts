@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { Redis } from 'ioredis';
 import { env } from './config/env';
 import { createApp } from './app';
 import { logger } from './utils/logger';
@@ -7,6 +8,8 @@ import { redis } from './lib/redis';
 import { closeMonitorQueue } from './lib/monitor-queue';
 import { closeNotificationQueue } from './lib/notification-queue';
 import { closeConnectionPools } from '@tracelayer/executor';
+import { setRealtimeServer } from './lib/realtime';
+import { createRealtimeServer } from './sockets/realtime-server';
 
 async function main(): Promise<void> {
   await redis.connect().catch((err: Error) => {
@@ -15,6 +18,14 @@ async function main(): Promise<void> {
   });
 
   const server = createServer(createApp());
+  // Pub/sub needs dedicated connections; they reconnect on their own if Redis restarts.
+  const pub = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+  const sub = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+  for (const client of [pub, sub]) {
+    client.on('error', (err) => logger.warn({ err: err.message }, 'Realtime Redis error'));
+  }
+  const io = createRealtimeServer(server, { redis: { pub, sub } });
+  setRealtimeServer(io);
   server.listen(env.BACKEND_PORT, () => {
     logger.info(`TraceLayer API listening on http://localhost:${env.BACKEND_PORT}`);
   });
@@ -24,10 +35,14 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down API');
-    server.close(async () => {
+    setRealtimeServer(null);
+    // Closing Socket.IO also closes the HTTP server.
+    void io.close(async () => {
       await Promise.allSettled([
         prisma.$disconnect(),
         redis.quit(),
+        pub.quit(),
+        sub.quit(),
         closeMonitorQueue(),
         closeNotificationQueue(),
         closeConnectionPools(),

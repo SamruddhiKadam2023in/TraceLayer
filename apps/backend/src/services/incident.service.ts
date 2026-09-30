@@ -6,10 +6,13 @@ import {
   type IncidentEventView,
   type IncidentListQueryParsed,
   type IncidentPage,
+  type IncidentRealtimePayload,
   type IncidentSummary,
   type UpdateIncidentInput,
 } from '@tracelayer/shared';
 import { prisma } from '../lib/prisma';
+import { publish } from '../lib/realtime';
+import { logger } from '../utils/logger';
 import { AppError } from '../utils/errors';
 import type { IncidentAccess, ProjectAccess, WorkspaceAccess } from './access.service';
 
@@ -72,6 +75,47 @@ const EVENT_ORDER: Record<IncidentEventType, number> = {
   ASSIGNED: 5,
   COMMENT: 6,
 };
+
+/**
+ * Tells the workspace's open dashboards that an incident changed (spec §29 incident.updated).
+ * Runs after the change is committed and never throws: live updates are best-effort.
+ */
+export function publishIncidentChange(
+  workspaceId: string,
+  incidentId: string,
+  change: IncidentRealtimePayload['change'],
+  actorId: string | null,
+): void {
+  void (async () => {
+    const [incident, actor] = await Promise.all([
+      prisma.incident.findUnique({
+        where: { id: incidentId },
+        select: {
+          id: true,
+          projectId: true,
+          number: true,
+          title: true,
+          severity: true,
+          status: true,
+        },
+      }),
+      actorId
+        ? prisma.user.findUnique({ where: { id: actorId }, select: { id: true, name: true } })
+        : null,
+    ]);
+    if (!incident) return;
+    const { projectId, ...summary } = incident;
+    publish(workspaceId, 'incident.updated', {
+      workspaceId,
+      projectId,
+      incident: summary,
+      change,
+      actor,
+    });
+  })().catch((err: unknown) =>
+    logger.warn({ err, incidentId }, 'Could not publish incident change'),
+  );
+}
 
 export async function listIncidents(
   scope: ProjectAccess | WorkspaceAccess,
@@ -168,7 +212,7 @@ export async function updateIncident(
       ? changes.assigneeId
       : await findAssignee(access.workspaceId, changes.assigneeId);
 
-  await prisma.$transaction(async (tx) => {
+  const firstChange = await prisma.$transaction(async (tx) => {
     await lockIncident(tx, access.incidentId);
     const current = await tx.incident.findUniqueOrThrow({
       where: { id: access.incidentId },
@@ -208,10 +252,20 @@ export async function updateIncident(
       event('ASSIGNED', current.assignee?.name ?? null, assignee?.name ?? null);
     }
 
-    if (events.length === 0) return;
+    if (events.length === 0) return null;
     await tx.incident.update({ where: { id: access.incidentId }, data });
     await tx.incidentEvent.createMany({ data: events });
+    return events[0]!.type;
   });
+  if (firstChange) {
+    const change =
+      firstChange === 'STATUS_CHANGED'
+        ? 'status'
+        : firstChange === 'SEVERITY_CHANGED'
+          ? 'severity'
+          : 'assignee';
+    publishIncidentChange(access.workspaceId, access.incidentId, change, access.userId);
+  }
   return getIncident(access);
 }
 
@@ -223,5 +277,6 @@ export async function addComment(
     data: { incidentId: access.incidentId, type: 'COMMENT', actorId: access.userId, message },
     include: { actor: person },
   });
+  publishIncidentChange(access.workspaceId, access.incidentId, 'comment', access.userId);
   return toEventView(event);
 }

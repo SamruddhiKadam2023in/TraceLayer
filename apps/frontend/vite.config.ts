@@ -22,6 +22,7 @@ export default defineConfig({
         manualChunks: {
           react: ['react', 'react-dom', 'react-router'],
           forms: ['react-hook-form', '@hookform/resolvers', 'zod'],
+          realtime: ['socket.io-client'],
         },
       },
     },

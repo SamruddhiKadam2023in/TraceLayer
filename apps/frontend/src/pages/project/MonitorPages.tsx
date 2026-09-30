@@ -20,6 +20,7 @@ import { LazyAnalyticsView as AnalyticsView } from '@/components/analytics/LazyA
 import { formatBytes } from '@/components/requests/status';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useProject } from '@/hooks/useProject';
+import { useRealtimeRefresh } from '@/hooks/useRealtime';
 import { useQuery } from '@/hooks/useQuery';
 import { fetchEndpoints } from '@/services/endpoint.service';
 import {
@@ -31,6 +32,7 @@ import {
   updateMonitor,
 } from '@/services/monitor.service';
 import { fetchEnvironments } from '@/services/project.service';
+import { useRealtimeStore } from '@/services/realtime';
 import { useCurrentWorkspace } from '@/stores/workspace.store';
 import { toApiError } from '@/utils/api-error';
 import { formatInterval, formatLatency, formatRelative } from '@/utils/format';
@@ -256,8 +258,21 @@ export function MonitorDetailPage() {
     waitingSince !== null &&
     !(latestRunAt !== undefined && Date.parse(latestRunAt) >= waitingSince - 1000);
 
-  // Background refresh; faster while waiting, giving up on the wait after a limit.
+  // Live: every finished check of this monitor refreshes the page at once.
+  const live = useRealtimeStore((s) => s.status) === 'live';
+  useRealtimeRefresh(
+    (m) => m.event === 'monitor.checked' && m.payload.monitor.id === monitorId,
+    () => {
+      reloadRuns();
+      reloadMonitor();
+    },
+    1000,
+  );
+
+  // Fallback refresh when live updates are down, and while waiting for "Run now" (with a
+  // time limit on the wait).
   useEffect(() => {
+    if (live && waitingSince === null) return;
     const timer = window.setInterval(
       () => {
         reloadRuns();
@@ -269,7 +284,7 @@ export function MonitorDetailPage() {
       waiting ? RUN_NOW_POLL_MS : RUNS_REFRESH_MS,
     );
     return () => window.clearInterval(timer);
-  }, [waiting, waitingSince, reloadRuns, reloadMonitor]);
+  }, [live, waiting, waitingSince, reloadRuns, reloadMonitor]);
 
   if (monitor.error?.code === 'NOT_FOUND') {
     return (

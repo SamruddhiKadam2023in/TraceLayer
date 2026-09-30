@@ -14,6 +14,7 @@ import { env } from './config';
 import { logger } from './logger';
 import { startHeartbeat } from './heartbeat';
 import { processMonitorCheck, type ProcessDependencies } from './checks/process-check';
+import { createRealtimePublisher } from './realtime/publisher';
 import {
   createEmailAdapter,
   createMailTransport,
@@ -46,6 +47,9 @@ async function main(): Promise<void> {
     enqueueNotification: async (notificationId) => {
       await notificationsQueue.add('deliver', { notificationId }, NOTIFICATION_JOB_OPTIONS);
     },
+    // PUBLISH needs no blocking connection; the heartbeat client is enough.
+    publish: createRealtimePublisher(heartbeatRedis, env.QUEUE_PREFIX),
+    onPublishError: (err) => logger.warn({ err }, 'Could not publish real-time events'),
   };
 
   // Notification channels. Without SMTP_HOST, emails are rendered and logged instead of sent.

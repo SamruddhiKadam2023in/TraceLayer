@@ -5,6 +5,7 @@ import { SeverityBadge } from '@/components/alerts/AlertBadges';
 import { EmptyState, LoadError } from '@/components/EmptyState';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useProject } from '@/hooks/useProject';
+import { useRealtimeRefresh } from '@/hooks/useRealtime';
 import { useQuery } from '@/hooks/useQuery';
 import { fetchFiredAlerts } from '@/services/alert.service';
 import { formatDuration, formatRelative } from '@/utils/format';
@@ -19,6 +20,13 @@ export function ProjectAlertsPage() {
     error,
     reload,
   } = useQuery(`fired:${project.id}`, () => fetchFiredAlerts(project.id));
+  // Alerts fire and resolve together with incident changes.
+  useRealtimeRefresh(
+    (m) =>
+      (m.event === 'incident.created' || m.event === 'incident.updated') &&
+      m.payload.projectId === project.id,
+    reload,
+  );
 
   if (error && !alerts) return <LoadError message={error.message} onRetry={reload} />;
   if (!alerts)

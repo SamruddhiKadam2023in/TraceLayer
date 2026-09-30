@@ -915,3 +915,44 @@ All fields are optional, but at least one is required. `assigneeId: null` unassi
 
 `message` is 1–2000 characters, trimmed. Returns the new `COMMENT` event. Rate limit: 60 per 15
 minutes, per user.
+
+## Real-time (Socket.IO)
+
+Live updates use Socket.IO at path `/socket.io`, on the same origin as the REST API (spec §29).
+
+**Connect** with the access token in the handshake:
+
+```js
+import { io } from 'socket.io-client';
+const socket = io({ path: '/socket.io', transports: ['websocket'], auth: { token: accessToken } });
+```
+
+A missing, invalid or expired token fails with a `connect_error` whose message is
+`UNAUTHENTICATED`. Refresh the session (`POST /api/auth/refresh`) and connect again. The server
+also disconnects a socket when its token expires (reason `io server disconnect`), so reconnect
+with the current token.
+
+**Subscribe** to one workspace. Subscribing again replaces the previous subscription:
+
+```js
+socket.emit('subscribe', workspaceId, (ack) => {
+  // { ok: true } or { ok: false, error: 'Workspace not found' }
+});
+```
+
+Any member (viewers included) may subscribe. Non-members get `Workspace not found`. A member who
+is removed stops receiving events immediately.
+
+**Events** (server → client). All carry `workspaceId` and `projectId`.
+
+| Event                    | Payload                                                                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `monitor.checked`        | `monitor { id, name }`, `run { id, startedAt, success, statusCode, durationMs, failureReason }`, `health`, `previousHealth`                                                     |
+| `monitor.failed`         | Same; the check failed after one that passed (or was the first)                                                                                                                 |
+| `monitor.recovered`      | Same; the check passed after one that failed                                                                                                                                    |
+| `monitor.status_changed` | Same; `health` differs from `previousHealth`                                                                                                                                    |
+| `incident.created`       | `incident { id, number, title, severity, status }`, `change: "opened"`, `actor: null`                                                                                           |
+| `incident.updated`       | Same shape; `change` is `alert_added`, `resolved_automatically`, `status`, `severity`, `assignee`, `comment` or `alert_closed`; `actor` is the person, or `null` for TraceLayer |
+
+Events say what changed, not everything about it. Fetch details from the REST API when needed.
+Events sent while a client was disconnected are not replayed, so refetch after reconnecting.

@@ -8,6 +8,7 @@ import {
   type WorkspaceMemberView,
 } from '@tracelayer/shared';
 import { prisma } from '../lib/prisma';
+import { revokeWorkspaceAccess } from '../lib/realtime';
 import { AppError } from '../utils/errors';
 import { compareNames } from '../utils/sort';
 
@@ -181,4 +182,6 @@ export async function removeMember(
       where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
     });
   });
+  // Their open tabs stop receiving this workspace's live events at once.
+  revokeWorkspaceAccess(targetUserId, workspaceId);
 }

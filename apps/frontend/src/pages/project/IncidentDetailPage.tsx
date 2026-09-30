@@ -22,6 +22,7 @@ import { IncidentStatusBadge } from '@/components/incidents/IncidentStatusBadge'
 import { SelectField } from '@/components/SelectField';
 import { StatusBadge } from '@/components/StatusBadge';
 import { TextAreaField } from '@/components/TextAreaField';
+import { useRealtimeRefresh } from '@/hooks/useRealtime';
 import { useQuery } from '@/hooks/useQuery';
 import { addIncidentComment, fetchIncident, updateIncident } from '@/services/incident.service';
 import { fetchMembers } from '@/services/workspace.service';
@@ -111,6 +112,14 @@ export function IncidentDetailPage() {
   const workspace = useCurrentWorkspace();
   const canManage = hasPermission(workspace.role, 'incidents.manage');
   const incident = useQuery(`incident:${incidentId}`, () => fetchIncident(incidentId));
+  // Someone else acknowledged, commented, or the monitor recovered: show it without a reload.
+  useRealtimeRefresh(
+    (m) =>
+      (m.event === 'incident.created' || m.event === 'incident.updated') &&
+      m.payload.incident.id === incidentId,
+    incident.reload,
+    1000,
+  );
   const members = useQuery(canManage ? `members:${workspace.id}` : null, () =>
     fetchMembers(workspace.id),
   );

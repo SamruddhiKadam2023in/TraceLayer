@@ -1,9 +1,15 @@
 import { createAlertNotifications, evaluateMonitorRules } from '../alerts/evaluate-rules';
+import { publishCheckEvents } from '../realtime/check-events';
+import type { RealtimePublish } from '../realtime/publisher';
 import { runMonitorCheck, type CheckDependencies, type CheckResult } from './run-check';
 
 export interface ProcessDependencies extends CheckDependencies {
   /** Queues delivery of a logged notification (BullMQ in production). */
   enqueueNotification: (notificationId: string) => Promise<void>;
+  /** Sends real-time events to the monitor's workspace; omitted in tests that do not need it. */
+  publish?: RealtimePublish;
+  /** Reports a failure to publish (never fails the check). */
+  onPublishError?: (err: unknown) => void;
 }
 
 export interface ProcessResult {
@@ -17,8 +23,8 @@ export interface ProcessResult {
 
 /**
  * A monitor job, spec §19: run the check and store it (steps 1–12), then evaluate the alert
- * rules, open or resolve incidents and notify (steps 13–14). Real-time events (step 15) plug
- * in here in Phase 12.
+ * rules, open or resolve incidents and notify (steps 13–14), then publish real-time events
+ * (step 15).
  */
 export async function processMonitorCheck(
   monitorId: string,
@@ -45,6 +51,13 @@ export async function processMonitorCheck(
     for (const notificationId of await createAlertNotifications(deps.prisma, evaluation)) {
       await deps.enqueueNotification(notificationId);
       result.notificationsQueued++;
+    }
+  }
+  if (deps.publish) {
+    try {
+      await publishCheckEvents(deps.prisma, deps.publish, monitorId, check.runId, evaluations);
+    } catch (err) {
+      deps.onPublishError?.(err);
     }
   }
   return result;

@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, Outlet } from 'react-router';
 import { Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { Logo } from '@/components/Logo';
+import { LiveIndicator } from '@/components/realtime/LiveIndicator';
+import { RealtimeConnector } from '@/components/realtime/RealtimeConnector';
 import { SidebarNav } from '@/components/Sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Toaster } from '@/components/Toaster';
 import { UserMenu } from '@/components/UserMenu';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 import { useUiStore } from '@/stores/ui.store';
@@ -62,6 +65,7 @@ export function AppLayout() {
         </span>
         <WorkspaceSwitcher />
         <div className="ml-auto flex items-center gap-2">
+          <LiveIndicator />
           <ThemeToggle />
           <UserMenu />
         </div>
@@ -110,6 +114,8 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <RealtimeConnector />
+      <Toaster />
     </div>
   );
 }

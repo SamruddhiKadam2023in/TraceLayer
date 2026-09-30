@@ -20,6 +20,7 @@ import { EmptyState, LoadError } from '@/components/EmptyState';
 import { MetricCard } from '@/components/metrics/MetricCard';
 import { RangePicker } from '@/components/metrics/RangePicker';
 import { HealthBadge } from '@/components/monitors/HealthBadge';
+import { useRealtimeRefresh } from '@/hooks/useRealtime';
 import { useQuery } from '@/hooks/useQuery';
 import {
   fetchErrorSeries,
@@ -73,6 +74,23 @@ export function AnalyticsView({
   // Per-monitor numbers are only needed for the monitor table and card.
   const overview = useQuery(showMonitors ? `overview:${key}` : null, () =>
     fetchMetricsOverview(query),
+  );
+  // New checks change every number here; refetch at most every 15 s while checks stream in.
+  useRealtimeRefresh(
+    (m) =>
+      m.event === 'monitor.checked' &&
+      (scope.monitorId
+        ? m.payload.monitor.id === scope.monitorId
+        : scope.projectId
+          ? m.payload.projectId === scope.projectId
+          : m.payload.workspaceId === scope.workspaceId),
+    () => {
+      summary.reload();
+      latency.reload();
+      errors.reload();
+      overview.reload();
+    },
+    15_000,
   );
 
   const label = RANGE_CONFIG[range].label.toLowerCase();

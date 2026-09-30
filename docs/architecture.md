@@ -788,6 +788,82 @@ user keeps their timeline entries without the name.
 - The **dashboard** lists the workspace's five newest active incidents.
 - The **Alerts** tab links each alert to its incident.
 
+## Real-time updates
+
+Monitors, incidents and the dashboard update in the browser as things happen, without a manual
+refresh (spec §29), using Socket.IO.
+
+```text
+Worker ──(Redis pub/sub, @socket.io/redis-emitter)──┐
+                                                    ▼
+API ──(publish)──▶ Socket.IO server + Redis adapter ──▶ browsers in room workspace:<id>
+```
+
+**Transport.**
+
+- The worker never connects to the API. It publishes through Redis with
+  `@socket.io/redis-emitter`.
+- The API's Socket.IO server uses the matching `@socket.io/redis-adapter`, keyed
+  `<QUEUE_PREFIX>:socket.io`. Every API instance delivers to its own connected browsers.
+- The API publishes the incident changes people make directly.
+- nginx and the Vite dev server proxy `/socket.io` (WebSocket upgrade) to the API, so the
+  browser keeps one origin.
+
+**Events.** Every event is sent to one workspace's room:
+
+| Event                    | When                                                                                                                          | Sent by       |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `monitor.checked`        | After every completed check. Carries the run, and the monitor's health before and after                                       | Worker        |
+| `monitor.failed`         | A check failed after one that passed, or the first check failed. Only on the change, so a monitor that stays down stays quiet | Worker        |
+| `monitor.recovered`      | A check passed after one that failed                                                                                          | Worker        |
+| `monitor.status_changed` | The health (latest 10 runs, same rule as the metrics API) changed                                                             | Worker        |
+| `incident.created`       | An alert opened an incident                                                                                                   | Worker        |
+| `incident.updated`       | See the `change` list below                                                                                                   | Worker or API |
+
+`incident.updated` carries a `change` field:
+
+- From the worker: `alert_added` or `resolved_automatically`.
+- From the API: `status`, `severity`, `assignee`, `comment`, or `alert_closed` (a rule was
+  changed or deleted).
+
+Incident payloads include the actor, or `null` when TraceLayer made the change itself. Payload
+types live in `packages/shared/src/realtime.ts`, so all three apps agree on them.
+
+**Access control.**
+
+- The handshake must carry a valid access token, or the connection is refused with
+  `UNAUTHENTICATED`.
+- A socket receives nothing until it subscribes to a workspace, and subscribing checks
+  membership. Each socket is in one workspace room at a time.
+- Removing a member (or the member leaving) takes their open sockets out of the room at once.
+  Deleting a workspace empties its room.
+- Each socket is disconnected when its access token expires. The client reconnects with a fresh
+  token, so access is re-checked at least every 15 minutes.
+- Incoming messages are capped at 10 KB. Clients only ever send `subscribe`.
+
+**Frontend.**
+
+- `services/realtime.ts` owns the tab's single connection:
+  - It reads the current token on every (re)connect.
+  - When the server rejects the token, it refreshes the session and reconnects.
+  - It re-subscribes after reconnects and when the user switches workspace.
+  - After a reconnect it sends pages a `resync` message, because events may have been missed.
+- A **Live / Connecting… / Offline** indicator in the top bar shows the state as a dot plus
+  text.
+- **Pop-up notifications** (announced to screen readers) for:
+  - an incident opening;
+  - an incident resolving, automatically or by someone else.
+    People don't get notifications about their own changes, and comments and assignments don't
+    trigger one.
+- `useRealtimeRefresh(match, reload, minInterval)` reloads a page's data when a matching event
+  arrives. It is throttled, so a burst of checks becomes one refetch and the last event is
+  never lost:
+  - dashboard and analytics: at most every 15 s;
+  - active incidents, incident lists and detail, the Alerts tab: every 3 s or faster;
+  - the monitor list, monitor detail and alert rules: on each check.
+- The monitor page's timer polling now runs only as a fallback, when the live connection is
+  down (and while waiting for "Run now").
+
 ## Configuration
 
 All configuration comes from environment variables; see [`.env.example`](../.env.example) for

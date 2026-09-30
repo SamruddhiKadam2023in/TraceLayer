@@ -4,6 +4,7 @@ import { ALERT_METRIC_INFO, type AlertRuleView } from '@tracelayer/shared';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { LoadError } from '@/components/EmptyState';
+import { useRealtimeRefresh } from '@/hooks/useRealtime';
 import { useQuery } from '@/hooks/useQuery';
 import {
   createRule,
@@ -32,6 +33,11 @@ function formatObserved(rule: AlertRuleView): string | null {
 /** A monitor's alert rules: state, thresholds, channels, and editing for managers. */
 export function AlertRulesSection({ monitorId, workspaceId, canManage }: AlertRulesSectionProps) {
   const rules = useQuery(`rules:${monitorId}`, () => fetchMonitorRules(monitorId));
+  // Rule states change with every check of the monitor.
+  useRealtimeRefresh(
+    (m) => m.event === 'monitor.checked' && m.payload.monitor.id === monitorId,
+    rules.reload,
+  );
   const channels = useQuery(`channels:${workspaceId}`, () => fetchChannels(workspaceId));
   const [editing, setEditing] = useState<AlertRuleView | 'new' | null>(null);
   const [deleting, setDeleting] = useState<AlertRuleView | null>(null);

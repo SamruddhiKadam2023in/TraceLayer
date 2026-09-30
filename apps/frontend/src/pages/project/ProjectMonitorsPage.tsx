@@ -5,6 +5,7 @@ import { EmptyState, LoadError } from '@/components/EmptyState';
 import { MethodBadge } from '@/components/endpoints/MethodBadge';
 import { HealthBadge } from '@/components/monitors/HealthBadge';
 import { useProject } from '@/hooks/useProject';
+import { useRealtimeRefresh } from '@/hooks/useRealtime';
 import { useQuery } from '@/hooks/useQuery';
 import { fetchMonitors } from '@/services/monitor.service';
 import { useCurrentWorkspace } from '@/stores/workspace.store';
@@ -19,6 +20,10 @@ export function ProjectMonitorsPage() {
     error,
     reload,
   } = useQuery(`monitors:${project.id}`, () => fetchMonitors(project.id));
+  useRealtimeRefresh(
+    (m) => m.event === 'monitor.checked' && m.payload.projectId === project.id,
+    reload,
+  );
   const atLimit = (monitors?.length ?? 0) >= MAX_MONITORS_PER_PROJECT;
 
   const newButton = canManage && !atLimit && (

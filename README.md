@@ -4,7 +4,7 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 11 of 20 (Incident management) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 12 of 20 (Real-time updates) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
 > and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
@@ -15,7 +15,8 @@ caused the failure.
 > Alert rules on monitors fire and resolve alerts automatically and email the workspace's
 > notification channels. Firing alerts open incidents that the team acknowledges, assigns,
 > comments on and resolves, with a full timeline; incidents resolve automatically when the
-> monitor recovers.
+> monitor recovers. Monitor status, incidents and the dashboard update live over Socket.IO,
+> with notifications when incidents open or resolve.
 > Product features are added phase by
 > phase following the [master specification](docs/SPEC.md). Sections below marked _(planned)_
 > describe features that do not exist yet.
@@ -43,21 +44,21 @@ monitoring and investigation tool, not a Postman clone.
 
 ## Product features
 
-| Feature                                                                               | Status                |
-| ------------------------------------------------------------------------------------- | --------------------- |
-| System status page (live API, database, Redis and worker health)                      | ✅ Phase 1            |
-| Accounts and authentication (JWT access + rotating refresh tokens)                    | ✅ Phase 2            |
-| Workspaces with roles (owner, admin, member, viewer)                                  | ✅ Phase 3            |
-| Projects, environments and environment variables (encrypted secrets)                  | ✅ Phase 4            |
-| API endpoints: method, URL, headers, params, body, auth, timeout, tags                | ✅ Phase 5            |
-| Request builder with response viewer and request history, SSRF-protected              | ✅ Phase 6            |
-| Scheduled monitors (availability, status, performance, validation)                    | ✅ Phase 7            |
-| Metrics: uptime, error rate, P50/P95/P99, status codes, health                        | ✅ Phase 8            |
-| Analytics dashboard: metric cards, latency/error/volume/status charts, monitor health | ✅ Phase 9            |
-| Alert rules with severities, fired-alert history, email notification channels         | ✅ Phase 10           |
-| Incidents: severity, status, assignment, comments, timeline, auto-resolution          | ✅ Phase 11           |
-| Real-time dashboard updates                                                           | _(planned, Phase 12)_ |
-| API dependency map                                                                    | _(planned, Phase 13)_ |
+| Feature                                                                                 | Status                |
+| --------------------------------------------------------------------------------------- | --------------------- |
+| System status page (live API, database, Redis and worker health)                        | ✅ Phase 1            |
+| Accounts and authentication (JWT access + rotating refresh tokens)                      | ✅ Phase 2            |
+| Workspaces with roles (owner, admin, member, viewer)                                    | ✅ Phase 3            |
+| Projects, environments and environment variables (encrypted secrets)                    | ✅ Phase 4            |
+| API endpoints: method, URL, headers, params, body, auth, timeout, tags                  | ✅ Phase 5            |
+| Request builder with response viewer and request history, SSRF-protected                | ✅ Phase 6            |
+| Scheduled monitors (availability, status, performance, validation)                      | ✅ Phase 7            |
+| Metrics: uptime, error rate, P50/P95/P99, status codes, health                          | ✅ Phase 8            |
+| Analytics dashboard: metric cards, latency/error/volume/status charts, monitor health   | ✅ Phase 9            |
+| Alert rules with severities, fired-alert history, email notification channels           | ✅ Phase 10           |
+| Incidents: severity, status, assignment, comments, timeline, auto-resolution            | ✅ Phase 11           |
+| Real-time updates (Socket.IO): live monitor status, incidents, dashboard, notifications | ✅ Phase 12           |
+| API dependency map                                                                      | _(planned, Phase 13)_ |
 
 ## Architecture
 

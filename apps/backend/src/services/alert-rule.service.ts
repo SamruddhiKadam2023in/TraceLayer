@@ -9,6 +9,7 @@ import {
   type UpdateAlertRuleInput,
 } from '@tracelayer/shared';
 import { lockRow } from '../lib/locks';
+import { publishIncidentChange } from './incident.service';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../utils/errors';
 import { compareNames } from '../utils/sort';
@@ -76,25 +77,28 @@ async function resolveOpenAlert(
   tx: Prisma.TransactionClient,
   ruleId: string,
   reason: string,
-): Promise<void> {
+): Promise<string[]> {
   await lockRow(tx, 'alert_rules', ruleId);
   const open = await tx.alert.findMany({
     where: { ruleId, status: 'FIRING' },
     select: { id: true, rule: { select: { name: true } } },
   });
   const now = new Date();
+  const incidentIds: string[] = [];
   for (const alert of open) {
     await tx.alert.update({
       where: { id: alert.id },
       data: { status: 'RESOLVED', resolvedAt: now },
     });
-    await onAlertResolved(tx, {
+    const outcome = await onAlertResolved(tx, {
       alertId: alert.id,
       now,
       autoResolve: false,
       reason: `${alert.rule?.name ?? 'Alert rule'}: ${reason}`,
     });
+    if (outcome) incidentIds.push(outcome.incidentId);
   }
+  return incidentIds;
 }
 
 export async function listRules(
@@ -175,9 +179,10 @@ export async function updateRule(
     config.durationMinutes !== current.durationMinutes ||
     (current.enabled && !config.enabled);
 
+  let closedIncidents: string[] = [];
   const row = await prisma.$transaction(async (tx) => {
     if (conditionChanged) {
-      await resolveOpenAlert(
+      closedIncidents = await resolveOpenAlert(
         tx,
         access.ruleId,
         config.enabled
@@ -205,15 +210,22 @@ export async function updateRule(
       include: ruleInclude,
     });
   });
+  for (const id of closedIncidents) {
+    publishIncidentChange(access.workspaceId, id, 'alert_closed', access.userId);
+  }
   return toView(row);
 }
 
 /** Deletes the rule; its alert history stays (with the rule reference cleared). */
 export async function deleteRule(access: AlertRuleAccess): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    await resolveOpenAlert(tx, access.ruleId, 'closed because the rule was deleted');
+  const closedIncidents = await prisma.$transaction(async (tx) => {
+    const ids = await resolveOpenAlert(tx, access.ruleId, 'closed because the rule was deleted');
     await tx.alertRule.delete({ where: { id: access.ruleId } });
+    return ids;
   });
+  for (const id of closedIncidents) {
+    publishIncidentChange(access.workspaceId, id, 'alert_closed', access.userId);
+  }
 }
 
 export async function listFiredAlerts(

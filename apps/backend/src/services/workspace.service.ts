@@ -1,6 +1,7 @@
 import type { WorkspaceSummary } from '@tracelayer/shared';
 import type { Workspace, WorkspaceRole } from '@tracelayer/db';
 import { prisma } from '../lib/prisma';
+import { closeWorkspaceRoom } from '../lib/realtime';
 import { monitorIdsFor, unscheduleMonitors } from './monitor-cleanup.service';
 import { compareNames } from '../utils/sort';
 import type { WorkspaceAccess } from './access.service';
@@ -65,4 +66,5 @@ export async function deleteWorkspace(access: WorkspaceAccess): Promise<void> {
   const monitorIds = await monitorIdsFor({ project: { workspaceId: access.workspaceId } });
   await prisma.workspace.delete({ where: { id: access.workspaceId } });
   await unscheduleMonitors(monitorIds);
+  closeWorkspaceRoom(access.workspaceId);
 }

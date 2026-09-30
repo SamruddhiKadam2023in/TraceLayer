@@ -15,6 +15,7 @@ import { EmptyState, LoadError } from '@/components/EmptyState';
 import { IncidentList } from '@/components/incidents/IncidentList';
 import { SelectField } from '@/components/SelectField';
 import { useProject } from '@/hooks/useProject';
+import { useRealtimeRefresh } from '@/hooks/useRealtime';
 import { useQuery } from '@/hooks/useQuery';
 import { fetchIncidents } from '@/services/incident.service';
 import { useAuthStore } from '@/stores/auth.store';
@@ -52,6 +53,12 @@ export function ProjectIncidentsPage() {
   };
   const { data, error, reload } = useQuery(`incidents:${JSON.stringify(query)}`, () =>
     fetchIncidents(query),
+  );
+  useRealtimeRefresh(
+    (m) =>
+      (m.event === 'incident.created' || m.event === 'incident.updated') &&
+      m.payload.projectId === project.id,
+    reload,
   );
 
   const update = (changes: Record<string, string>, keepPage = false) =>
