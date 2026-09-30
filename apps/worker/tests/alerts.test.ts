@@ -169,6 +169,20 @@ describe('processMonitorCheck: from a real failing check to a queued email', () 
     ).toEqual(['ALERT_FIRED', 'ALERT_RESOLVED']);
   });
 
+  it('still completes the check when live events cannot be published', async () => {
+    const publishErrors: unknown[] = [];
+    const result = await processMonitorCheck(ids.monitorId, {
+      ...deps,
+      publish: () => {
+        throw new Error('Redis unavailable');
+      },
+      onPublishError: (err) => void publishErrors.push(err),
+    });
+    expect(result.check).toMatchObject({ status: 'completed', success: true });
+    expect(await prisma.monitorRun.count()).toBe(1);
+    expect(publishErrors).toEqual([new Error('Redis unavailable')]);
+  });
+
   it('skips disabled channels and rules without channels', async () => {
     await prisma.notificationChannel.update({
       where: { id: ids.channelId },
@@ -318,6 +332,43 @@ describe('deliverNotification', () => {
       status: 'FAILED',
       attempts: 2,
     });
+  });
+
+  it('skips notifications that were deleted, already sent, or whose channel was disabled', async () => {
+    const id = await queuedNotification();
+    const sent: string[] = [];
+    const deliveryDeps = {
+      prisma,
+      appUrl: 'http://x',
+      adapters: adapters(async (_config, message) => void sent.push(message.subject)),
+    };
+
+    await prisma.notificationChannel.update({
+      where: { id: ids.channelId },
+      data: { enabled: false },
+    });
+    expect(await deliverNotification(id, deliveryDeps, false)).toEqual({
+      status: 'skipped',
+      reason: 'channel disabled',
+    });
+    expect(await prisma.notification.findUniqueOrThrow({ where: { id } })).toMatchObject({
+      status: 'FAILED',
+      error: 'Channel is disabled',
+    });
+
+    // A test notification still reaches a disabled channel: people test before enabling.
+    const test = await prisma.notification.create({
+      data: { workspaceId: ids.workspaceId, channelId: ids.channelId, event: 'TEST' },
+    });
+    expect(await deliverNotification(test.id, deliveryDeps, false)).toEqual({ status: 'sent' });
+    expect(await deliverNotification(test.id, deliveryDeps, false)).toEqual({
+      status: 'skipped',
+      reason: 'already sent',
+    });
+    expect(
+      await deliverNotification('00000000-0000-4000-8000-000000000000', deliveryDeps, false),
+    ).toEqual({ status: 'skipped', reason: 'notification deleted' });
+    expect(sent).toHaveLength(1);
   });
 });
 

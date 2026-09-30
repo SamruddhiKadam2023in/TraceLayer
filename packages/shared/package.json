@@ -14,9 +14,15 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "jest"
   },
   "dependencies": {
     "zod": "^4"
+  },
+  "devDependencies": {
+    "@types/jest": "^30",
+    "jest": "^30",
+    "ts-jest": "^29"
   }
 }

@@ -43,6 +43,30 @@ async function environments(projectId: string, user = owner) {
 }
 
 describe('projects', () => {
+  // Regression (found by the Phase 15 E2E test): the web form sends null for an empty
+  // description, which the API used to reject, so no project could be created from the UI
+  // without one.
+  it('accepts null as "no description", on create and on update', async () => {
+    const created = await request(app)
+      .post('/api/projects')
+      .set(owner.auth)
+      .send({ workspaceId, name: 'No description', description: null });
+    expect(created.status).toBe(201);
+    expect(created.body.data.description).toBeNull();
+
+    const described = await request(app)
+      .patch(`/api/projects/${created.body.data.id}`)
+      .set(owner.auth)
+      .send({ description: 'Now with one' });
+    expect(described.body.data.description).toBe('Now with one');
+    const cleared = await request(app)
+      .patch(`/api/projects/${created.body.data.id}`)
+      .set(owner.auth)
+      .send({ description: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.data.description).toBeNull();
+  });
+
   it('creates a project with the default environments', async () => {
     const res = await request(app)
       .post('/api/projects')

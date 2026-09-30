@@ -15,12 +15,16 @@ import { logger } from '../utils/logger';
  * (e.g. Redis briefly down) only delays a change instead of losing it.
  */
 let queue: Queue<MonitorCheckJobData> | undefined;
+let connection: Redis | undefined;
 
 function getQueue(): Queue<MonitorCheckJobData> {
-  queue ??= new Queue<MonitorCheckJobData>(QUEUE_NAMES.MONITOR_CHECKS, {
-    connection: new Redis(env.REDIS_URL, { maxRetriesPerRequest: 2, lazyConnect: true }),
-    prefix: env.QUEUE_PREFIX,
-  });
+  if (!queue) {
+    connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 2, lazyConnect: true });
+    queue = new Queue<MonitorCheckJobData>(QUEUE_NAMES.MONITOR_CHECKS, {
+      connection,
+      prefix: env.QUEUE_PREFIX,
+    });
+  }
   return queue;
 }
 
@@ -73,6 +77,10 @@ export async function enqueueMonitorRun(monitorId: string): Promise<void> {
   await getQueue().add(JOB_NAMES.CHECK, { monitorId, manual: true }, CHECK_JOB_OPTIONS);
 }
 
+/** Closes the queue and its Redis connection (BullMQ leaves a connection it was given open). */
 export async function closeMonitorQueue(): Promise<void> {
   await queue?.close();
+  await connection?.quit();
+  queue = undefined;
+  connection = undefined;
 }

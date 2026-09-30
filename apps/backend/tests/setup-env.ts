@@ -6,6 +6,8 @@ process.env.NODE_ENV = 'test';
 process.env.LOG_LEVEL = 'silent';
 process.env.DATABASE_URL = TEST_DATABASE_URL;
 process.env.REDIS_URL ??= 'redis://localhost:6379';
+// Own queue/key namespace, so tests never feed jobs to a worker running against the same Redis.
+process.env.QUEUE_PREFIX = 'tracelayer-test';
 process.env.FRONTEND_URL ??= 'http://localhost:5180';
 process.env.JWT_SECRET ??= 'test-access-secret-that-is-long-enough-000';
 process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret-that-is-long-enough-00';

@@ -4,7 +4,7 @@
 understand whether their APIs are healthy, how they are performing, when they fail, and what
 caused the failure.
 
-> **Project status: Phase 14 of 20 (Security hardening) complete.** The monorepo, frontend, backend,
+> **Project status: Phase 15 of 20 (Testing) complete.** The monorepo, frontend, backend,
 > worker, database and Docker stack run end to end. Users can sign in, share workspaces with
 > teammates under role-based permissions, organise their APIs into projects with environments
 > and encrypted secret variables, save API endpoints with their full request configuration, and run them through an
@@ -160,55 +160,25 @@ on your machine. To use a different port, change `POSTGRES_PORT` and `DATABASE_U
 ## Testing and code quality
 
 ```bash
+pnpm infra:up                  # PostgreSQL and Redis for the integration tests
 pnpm typecheck && pnpm lint && pnpm format:check && pnpm test
+
+docker compose up -d --build   # the full stack, for the end-to-end test
+pnpm test:e2e
 ```
 
-Backend tests need PostgreSQL and Redis running (`pnpm infra:up`). Integration tests use a
-separate `tracelayer_test` database, which is created and migrated automatically, so your
-development data is never touched.
+| Level       | Tool                     | Covers                                                                                                                                         |
+| ----------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit        | Jest                     | Validation, check evaluation, health rules, SSRF rules, request execution, timeline text                                                       |
+| Integration | Jest + Supertest         | Every API route against real PostgreSQL and Redis; the worker's checks, alerts, incidents, notifications and schedules; forced race conditions |
+| Frontend    | Vitest + Testing Library | Login, dashboard, endpoint and monitor creation, incident filtering, charts, empty states, live updates                                        |
+| End-to-end  | Playwright               | The critical flow in a real browser against the Docker stack: register → … → resolve incident                                                  |
 
-Current coverage:
+Integration tests use separate test databases, so development data is never touched. The
+end-to-end test uses the Microsoft Edge that ships with Windows, so no browser download is
+needed. Details, settings and what each suite covers: [docs/testing.md](docs/testing.md).
 
-- **Backend (Jest + Supertest):** health checks, error envelope, and the full auth flow against
-  a real database: registration and validation, login, token verification (including expired,
-  forged and `alg: none` tokens), refresh-token rotation and theft detection, logout, and rate
-  limiting. The Redis rate-limit store is tested against a real Redis.
-  Workspaces: CRUD, the permission table for every role, member management, the
-  "always one owner" rule, and a forced race where two owners demote each other at once.
-  Projects and environments: CRUD, authorization per role, name and limit rules, base URL
-  validation, and secrets (encrypted in the database, never returned by any endpoint, and
-  protected by a database constraint). Unit tests cover the AES-256-GCM secret encryption.
-  Endpoints: CRUD, filters, per-role access, and every configuration rule (credential
-  references, URL forms, JSON with variables, no body on GET/HEAD, validation of the merged
-  result on partial updates). Request execution: variables and secrets resolved server side,
-  the secret-origin rule, masking, history filters, sorting and pagination. Monitors: CRUD,
-  validation per type, scheduling calls, unscheduling on cascading deletes, run history and
-  access. Metrics: totals, uptime, error rate, exact P50/P95/P99 against hand-computed values,
-  latency excluding timeouts, status distribution, gap-filled time series, filters, and the
-  health rules, for a project or a whole workspace.
-- **Executor (Jest):** SSRF address and hostname rules (including IPv4-mapped IPv6, NAT64 and
-  hex/decimal IPv4 tricks), request preparation, and real HTTP execution against local servers:
-  timeouts, gzip, size caps, binary bodies, redirects and credential handling.
-- **Worker (Jest):** the heartbeat; check evaluation for every monitor type; real checks
-  against a local server with a test database (secrets decrypted, runs stored, failure counting,
-  timeouts, configuration errors, paused and deleted monitors); BullMQ scheduler reconciliation
-  against real Redis; and run retention. The worker uses its own `tracelayer_worker_test`
-  database, so it can run in parallel with the backend suite.
-- **Frontend (Vitest + Testing Library):** sign-in, sign-up, sign-out, route protection, session
-  restore on reload, silent token renewal, the System Status page, first-workspace onboarding,
-  workspace switching, what each role sees in settings, and member and deletion flows; the
-  project list, overview, environments and settings, including secret masking and editing; the
-  endpoint list and filters, the endpoint editor (tabs, validation, variable warnings, keyboard
-  navigation) and read-only access for viewers; sending requests, the response viewer (pretty and
-  raw JSON, headers, the sent request), error states, and the history table with URL-backed
-  filters, sorting and paging; the monitor list, creating each monitor type (including JSON
-  checks), run history, run now and pause/resume; health badges and the metrics panel (range
-  switching, "—" when there is no data); the dashboard and analytics views (workspace, project
-  and endpoint scopes, chart text summaries, monitor health table, empty and error states with
-  retry).
-
-End-to-end tests with Playwright arrive in Phase 15, and a GitHub Actions pipeline running all of
-the above in Phase 16.
+A GitHub Actions pipeline running all of this arrives in Phase 16.
 
 ## API
 
@@ -305,6 +275,7 @@ hardening → testing → CI/CD → demo data → UI polish → documentation �
 | [docs/SPEC.md](docs/SPEC.md)                 | The master product and engineering specification |
 | [docs/architecture.md](docs/architecture.md) | System architecture and components               |
 | [docs/api.md](docs/api.md)                   | REST API reference                               |
+| [docs/testing.md](docs/testing.md)           | Test strategy, suites and how to run them        |
 
 Further guides (database, monitoring, security, deployment) are added in the phases that
 build those parts.

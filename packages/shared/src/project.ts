@@ -17,7 +17,7 @@ export const projectNameSchema = z
   .min(1, 'Project name is required')
   .max(100, 'Project name is too long');
 
-/** Empty text means "no description". */
+/** Empty text or null means "no description" (forms send null for an empty field). */
 const descriptionSchema = z
   .string()
   .trim()
@@ -27,14 +27,14 @@ const descriptionSchema = z
 export const createProjectSchema = z.object({
   workspaceId: z.uuid('Invalid workspace'),
   name: projectNameSchema,
-  description: descriptionSchema.optional(),
+  description: descriptionSchema.nullable().optional(),
 });
 export type CreateProjectInput = z.input<typeof createProjectSchema>;
 
 export const updateProjectSchema = z
   .object({
     name: projectNameSchema.optional(),
-    description: descriptionSchema.optional(),
+    description: descriptionSchema.nullable().optional(),
   })
   .refine((v) => v.name !== undefined || v.description !== undefined, 'Nothing to update');
 export type UpdateProjectInput = z.input<typeof updateProjectSchema>;
