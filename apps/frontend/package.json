@@ -17,7 +17,7 @@
     "@tracelayer/shared": "workspace:^",
     "@xyflow/react": "^12",
     "axios": "^1.20.0",
-    "lucide-react": "^1.48.0",
+    "lucide-react": "^1.52.0",
     "react": "^19",
     "react-dom": "^19",
     "react-hook-form": "^7.89.0",
